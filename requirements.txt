@@ -1,6 +1,9 @@
 # FlowPad — Dependências Python
 # Instale com: pip install -r requirements.txt
 
+# UI moderna — widgets com bordas arredondadas e suporte a dark/light mode
+customtkinter==5.2.2
+
 # System tray (bandeja do sistema Windows/Linux/Mac)
 pystray==0.19.5
 
