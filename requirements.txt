@@ -1,0 +1,26 @@
+# FlowPad — Dependências Python
+# Instale com: pip install -r requirements.txt
+
+# System tray (bandeja do sistema Windows/Linux/Mac)
+pystray==0.19.5
+
+# Hotkeys globais (atalhos que funcionam em background)
+pynput==1.7.6
+
+# Geração e manipulação de imagens (ícone do tray)
+Pillow==10.3.0
+
+# Notificações nativas do sistema operacional
+plyer==2.1.0
+
+# ── Desenvolvimento ──────────────────────────────────────────────────
+# Testes unitários
+pytest==8.2.0
+pytest-cov==5.0.0
+
+# Linting e formatação
+ruff==0.4.4
+black==24.4.2
+
+# Geração do executável .exe
+pyinstaller==6.6.0
