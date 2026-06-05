@@ -2,30 +2,44 @@
 ui/tray_icon.py
 Ícone da bandeja do sistema (system tray).
 Usa `pystray` para rodar no Windows/Linux/Mac.
+Carrega o ícone de assets/icon.ico se disponível; gera programaticamente como fallback.
 """
 
+import os
+import sys
 from typing import Callable
+
 import pystray
 from PIL import Image, ImageDraw
 
 
+def _get_asset_path(filename: str) -> str:
+    """Resolve o path de assets tanto em desenvolvimento quanto em bundle PyInstaller."""
+    if getattr(sys, "frozen", False):
+        # Rodando como .exe empacotado pelo PyInstaller
+        base = sys._MEIPASS
+    else:
+        base = os.path.join(os.path.dirname(__file__), "..", "..")
+    return os.path.normpath(os.path.join(base, "assets", filename))
+
+
 def _create_icon_image() -> Image.Image:
     """
-    Gera um ícone simples programaticamente — sem dependência de arquivo de imagem.
-    Um círculo verde com letra 'F' (FlowPad).
+    Tenta carregar o ícone de assets/icon.ico.
+    Fallback: gera um ícone simples programaticamente.
     """
+    icon_path = _get_asset_path("icon.ico")
+    if os.path.exists(icon_path):
+        return Image.open(icon_path)
+
+    # Fallback — geração programática (sem arquivo externo)
     size = 64
     img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
     draw = ImageDraw.Draw(img)
-
-    # Fundo circular verde
     draw.ellipse([4, 4, size - 4, size - 4], fill="#5CE07A")
-
-    # Letra F centralizada (sem dependência de fonte externa)
-    draw.rectangle([20, 16, 28, 48], fill="white")   # Haste vertical
-    draw.rectangle([20, 16, 44, 24], fill="white")   # Barra do topo
-    draw.rectangle([20, 30, 38, 38], fill="white")   # Barra do meio
-
+    draw.rectangle([20, 16, 28, 48], fill="white")
+    draw.rectangle([20, 16, 44, 24], fill="white")
+    draw.rectangle([20, 30, 38, 38], fill="white")
     return img
 
 
@@ -39,10 +53,12 @@ class TrayIcon:
         self,
         on_open_dashboard: Callable,
         on_quick_capture: Callable,
+        on_open_settings: Callable,
         on_quit: Callable,
     ):
         self._on_open_dashboard = on_open_dashboard
         self._on_quick_capture = on_quick_capture
+        self._on_open_settings = on_open_settings
         self._on_quit = on_quit
         self._icon = self._build_icon()
 
@@ -73,8 +89,7 @@ class TrayIcon:
         self._on_open_dashboard()
 
     def _open_settings(self, icon, item):
-        # Sprint 2: tela de configurações
-        pass
+        self._on_open_settings()
 
     def _quit(self, icon, item):
         self._on_quit()

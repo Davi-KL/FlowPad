@@ -8,7 +8,9 @@ a = Analysis(
     ['src/main.py'],
     pathex=['.'],
     binaries=[],
-    datas=[],
+    datas=[
+        ('assets/icon.ico', 'assets'),
+    ],
     hiddenimports=[
         'pystray._win32',
         'pynput.keyboard._win32',
@@ -48,5 +50,5 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    # icon='assets/icon.ico',  # Descomente quando tiver o ícone
+    icon='assets/icon.ico',
 )
