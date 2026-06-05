@@ -186,6 +186,28 @@ pyinstaller flowpad.spec
 
 ## 📋 Roadmap de Sprints
 
+### ✅ Sprint 3 — Polish Visual (concluída)
+
+**Objetivo:** Migrar para CustomTkinter, widgets modernos, suporte a tema dark/light e fade-in na captura rápida.
+
+**O que foi entregue:**
+- [x] **[DEPS] `customtkinter==5.2.2`** — adicionado ao requirements.txt
+- [x] **[FEAT] `ui/colors.py`** — paleta centralizada com tuplas `(light, dark)` para troca automática de tema
+- [x] **[REFACTOR] `src/main.py`** — inicializa `ctk.set_appearance_mode("dark")` e color theme
+- [x] **[REFACTOR] `core/app.py`** — root window migrada de `tk.Tk` para `ctk.CTk`
+- [x] **[REFACTOR] Todos os 5 views** — `tk.Listbox` substituído por `ctk.CTkScrollableFrame` com cards clicáveis; seleção por ID em vez de índice
+- [x] **[REFACTOR] `ui/dashboard.py`** — migrado para `ctk.CTkToplevel`; toggle Dark/Light com `CTkSegmentedButton` no header
+- [x] **[REFACTOR] `ui/quick_capture.py`** — migrado para `ctk.CTkToplevel`; animação de fade-in (~160ms, 60fps)
+- [x] **[REFACTOR] `ui/settings.py`** — migrado para `ctk.CTkToplevel`; seletor de tema visual com preview em tempo real
+
+**Decisões técnicas desta sprint:**
+- `text_widget` na quick_capture mantido como `tk.Text` nativo — garante bindings de teclado precisos sem depender das APIs internas do CTkTextbox
+- Cards usam `fg_color` como tupla `(light, dark)` para suporte automático ao appearance_mode
+- Fade-in via `wm_attributes("-alpha")` incrementado de 0→1 em steps de 0.1 a cada 16ms (≈60fps)
+- Seleção de item nos views armazenada por `entry.id` (string UUID) em vez de índice — robusta a re-renders
+
+---
+
 ### ✅ Sprint 2 — Visões por Tipo (concluída)
 
 **Objetivo:** Dashboard por abas com visão especializada para cada tipo de entrada; captura multi-passo para Lembrete e Nota; captura automática de clipboard.
@@ -404,5 +426,5 @@ pyinstaller flowpad.spec
 
 ---
 
-*Última atualização: Sprint 2 — Visões por Tipo*
-*Próxima atualização prevista: ao finalizar Sprint 3 (Polish Visual)*
+*Última atualização: Sprint 3 — Polish Visual*
+*Próxima atualização prevista: ao finalizar Sprint 4 (Recursos Avançados)*
