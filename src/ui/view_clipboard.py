@@ -88,10 +88,10 @@ class ClipboardView(ctk.CTkFrame):
         )
         self.status_label.pack(side="right")
 
-        self.bind("<c>", lambda e: self._copy_selected())
-        self.bind("<C>", lambda e: self._copy_selected())
-        self.bind("<a>", lambda e: self._archive_selected())
-        self.bind("<A>", lambda e: self._archive_selected())
+        self.bind("<c>",      lambda e: self._copy_selected())
+        self.bind("<C>",      lambda e: self._copy_selected())
+        self.bind("<a>",      lambda e: self._archive_selected())
+        self.bind("<A>",      lambda e: self._archive_selected())
         self.bind("<Delete>", lambda e: self._delete_selected())
 
     def refresh(self):
@@ -153,6 +153,23 @@ class ClipboardView(ctk.CTkFrame):
     def _get_selected(self) -> Entry | None:
         if not self._selected_id: return None
         return next((e for e in self._clips if e.id == self._selected_id), None)
+
+    # ── Navegação por teclado ─────────────────────────────────────────────
+
+    def select_first(self):
+        if self._clips:
+            self._select(self._clips[0].id)
+
+    def _nav(self, direction: int):
+        if not self._clips:
+            return
+        ids = [e.id for e in self._clips]
+        try:
+            current = ids.index(self._selected_id) if self._selected_id else -1
+        except ValueError:
+            current = -1
+        idx = (current + direction) % len(self._clips)
+        self._select(self._clips[idx].id)
 
     def _copy_selected(self):
         entry = self._get_selected()

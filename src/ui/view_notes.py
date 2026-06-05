@@ -102,10 +102,10 @@ class NotesView(ctk.CTkFrame):
         )
         self.status_label.pack(side="right")
 
-        self.bind("<c>", lambda e: self._copy_selected())
-        self.bind("<C>", lambda e: self._copy_selected())
-        self.bind("<a>", lambda e: self._archive_selected())
-        self.bind("<A>", lambda e: self._archive_selected())
+        self.bind("<c>",      lambda e: self._copy_selected())
+        self.bind("<C>",      lambda e: self._copy_selected())
+        self.bind("<a>",      lambda e: self._archive_selected())
+        self.bind("<A>",      lambda e: self._archive_selected())
         self.bind("<Delete>", lambda e: self._delete_selected())
 
     def refresh(self):
@@ -165,6 +165,23 @@ class NotesView(ctk.CTkFrame):
     def _get_selected(self) -> Entry | None:
         if not self._selected_id: return None
         return next((n for n in self._notes if n.id == self._selected_id), None)
+
+    # ── Navegação por teclado ─────────────────────────────────────────────
+
+    def select_first(self):
+        if self._notes:
+            self._select(self._notes[0].id)
+
+    def _nav(self, direction: int):
+        if not self._notes:
+            return
+        ids = [n.id for n in self._notes]
+        try:
+            current = ids.index(self._selected_id) if self._selected_id else -1
+        except ValueError:
+            current = -1
+        idx = (current + direction) % len(self._notes)
+        self._select(self._notes[idx].id)
 
     def _copy_selected(self):
         note = self._get_selected()

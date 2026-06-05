@@ -39,7 +39,7 @@ class TasksView(ctk.CTkFrame):
         ).pack(side="left")
 
         self._filter_btns: dict[str, ctk.CTkButton] = {}
-        for key, label in [("completed", "Concluídas"), ("pending", "Pendentes"), ("all", "Todas")]:
+        for key, label in [("completed", "Concluídas [3]"), ("pending", "Pendentes [2]"), ("all", "Todas [1]")]:
             btn = ctk.CTkButton(
                 top, text=label,
                 font=("Consolas", 10),
@@ -165,6 +165,23 @@ class TasksView(ctk.CTkFrame):
     def _get_selected(self) -> Entry | None:
         if not self._selected_id: return None
         return next((t for t in self._filtered if t.id == self._selected_id), None)
+
+    # ── Navegação por teclado ─────────────────────────────────────────────
+
+    def select_first(self):
+        if self._filtered:
+            self._select(self._filtered[0].id)
+
+    def _nav(self, direction: int):
+        if not self._filtered:
+            return
+        ids = [t.id for t in self._filtered]
+        try:
+            current = ids.index(self._selected_id) if self._selected_id else -1
+        except ValueError:
+            current = -1
+        idx = (current + direction) % len(self._filtered)
+        self._select(self._filtered[idx].id)
 
     def _toggle_selected(self):
         task = self._get_selected()

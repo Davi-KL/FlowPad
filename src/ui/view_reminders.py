@@ -79,8 +79,8 @@ class RemindersView(ctk.CTkFrame):
         )
         self.status_label.pack(side="right")
 
-        self.bind("<a>", lambda e: self._archive_selected())
-        self.bind("<A>", lambda e: self._archive_selected())
+        self.bind("<a>",      lambda e: self._archive_selected())
+        self.bind("<A>",      lambda e: self._archive_selected())
         self.bind("<Delete>", lambda e: self._delete_selected())
 
     def refresh(self):
@@ -174,6 +174,23 @@ class RemindersView(ctk.CTkFrame):
     def _get_selected(self) -> Entry | None:
         if not self._selected_id: return None
         return next((e for e in self._reminders if e.id == self._selected_id), None)
+
+    # ── Navegação por teclado ─────────────────────────────────────────────
+
+    def select_first(self):
+        if self._reminders:
+            self._select(self._reminders[0].id)
+
+    def _nav(self, direction: int):
+        if not self._reminders:
+            return
+        ids = [e.id for e in self._reminders]
+        try:
+            current = ids.index(self._selected_id) if self._selected_id else -1
+        except ValueError:
+            current = -1
+        idx = (current + direction) % len(self._reminders)
+        self._select(self._reminders[idx].id)
 
     def _archive_selected(self):
         entry = self._get_selected()
