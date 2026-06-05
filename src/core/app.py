@@ -7,6 +7,7 @@ Gerencia o ciclo de vida: system tray, hotkeys globais e janelas.
 import threading
 import tkinter as tk
 from tkinter import messagebox
+import customtkinter as ctk
 
 from core.storage import Storage
 from core.hotkey_manager import HotkeyManager
@@ -24,9 +25,9 @@ class FlowPadApp:
     """
 
     def __init__(self):
-        # Tkinter root oculta — necessária para as janelas filhas e notificações
-        self.root = tk.Tk()
-        self.root.withdraw()  # Esconde a janela raiz — só as filhas aparecem
+        # Janela root oculta — necessária para as janelas filhas e notificações
+        self.root = ctk.CTk()
+        self.root.withdraw()
         self.root.title("FlowPad")
 
         # Módulos principais
