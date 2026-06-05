@@ -1,113 +1,98 @@
 """
 ui/view_tasks.py
-Visão de Tarefas — lista to-do com toggle de conclusão e filtros.
+Visão de Tarefas — lista to-do com checkboxes e filtros Pendentes/Concluídas.
 """
 
 import tkinter as tk
 from tkinter import messagebox
 from typing import Callable
 
+import customtkinter as ctk
+
 from core.storage import Storage, Entry
-
-COLORS = {
-    "bg":       "#1A1A2E",
-    "surface":  "#16213E",
-    "surface2": "#0F3460",
-    "accent":   "#5CE07A",
-    "accent2":  "#F4C542",
-    "text":     "#E8EAF0",
-    "text_dim": "#8892A4",
-    "selected": "#0F3460",
-    "danger":   "#E05C5C",
-}
+from ui.colors import COLORS as C
 
 
-class TasksView(tk.Frame):
-    """To-Do list de tarefas com toggle de conclusão e filtros Pendentes/Concluídas."""
+class TasksView(ctk.CTkFrame):
+    """To-Do list com checkboxes e filtros Todas/Pendentes/Concluídas."""
 
     def __init__(self, master: tk.Widget, storage: Storage, on_new: Callable):
-        super().__init__(master, bg=COLORS["bg"])
+        super().__init__(master, fg_color=C["bg"], corner_radius=0)
         self.storage = storage
         self.on_new = on_new
         self._tasks: list[Entry] = []
         self._filtered: list[Entry] = []
         self._filter = "all"
-        self._selected_idx = -1
+        self._selected_id: str | None = None
+        self._rows: dict[str, ctk.CTkFrame] = {}
 
         self._build_ui()
         self.refresh()
 
     def _build_ui(self):
-        top = tk.Frame(self, bg=COLORS["bg"], padx=12, pady=8)
-        top.pack(fill="x")
+        top = ctk.CTkFrame(self, fg_color=C["bg"], corner_radius=0)
+        top.pack(fill="x", padx=12, pady=(10, 4))
 
-        tk.Label(
+        ctk.CTkLabel(
             top, text="✅  Tarefas",
-            bg=COLORS["bg"], fg=COLORS["accent"],
-            font=("Consolas", 11, "bold")
+            font=("Consolas", 13, "bold"), text_color=C["accent"],
         ).pack(side="left")
 
-        self._filter_btns: dict[str, tk.Button] = {}
+        self._filter_btns: dict[str, ctk.CTkButton] = {}
         for key, label in [("completed", "Concluídas"), ("pending", "Pendentes"), ("all", "Todas")]:
-            btn = tk.Button(
+            btn = ctk.CTkButton(
                 top, text=label,
-                bg=COLORS["surface2"] if key == "all" else COLORS["surface"],
-                fg=COLORS["text"],
-                relief="flat", bd=0, padx=10, pady=3,
-                font=("Consolas", 8), cursor="hand2",
+                font=("Consolas", 10),
+                width=100, height=28, corner_radius=6,
+                fg_color=C["selected"] if key == "all" else C["surface"],
+                hover_color=C["border"],
+                text_color=C["text"],
                 command=lambda k=key: self._set_filter(k),
             )
             btn.pack(side="right", padx=2)
             self._filter_btns[key] = btn
 
-        list_frame = tk.Frame(self, bg=COLORS["bg"])
-        list_frame.pack(fill="both", expand=True, padx=12, pady=(0, 4))
-
-        scrollbar = tk.Scrollbar(list_frame, bg=COLORS["surface"], troughcolor=COLORS["bg"])
-        scrollbar.pack(side="right", fill="y")
-
-        self.listbox = tk.Listbox(
-            list_frame,
-            bg=COLORS["surface"], fg=COLORS["text"],
-            selectbackground=COLORS["selected"],
-            selectforeground=COLORS["accent"],
-            relief="flat", bd=0,
-            font=("Consolas", 10),
-            activestyle="none",
-            yscrollcommand=scrollbar.set,
+        self.scroll = ctk.CTkScrollableFrame(
+            self, fg_color=C["surface"], corner_radius=8,
+            scrollbar_button_color=C["border"],
+            scrollbar_button_hover_color=C["accent"],
         )
-        self.listbox.pack(fill="both", expand=True)
-        scrollbar.config(command=self.listbox.yview)
-        self.listbox.bind("<<ListboxSelect>>", self._on_select)
+        self.scroll.pack(fill="both", expand=True, padx=12, pady=(0, 4))
 
-        action_bar = tk.Frame(self, bg=COLORS["bg"], padx=12, pady=6)
-        action_bar.pack(fill="x")
+        action_bar = ctk.CTkFrame(self, fg_color=C["bg"], corner_radius=0)
+        action_bar.pack(fill="x", padx=12, pady=(0, 8))
 
-        for label, bg, cmd in [
-            ("☑ Toggle  [Space]", COLORS["accent"],  self._toggle_selected),
-            ("🗂 Arquivar  [A]",  COLORS["accent2"], self._archive_selected),
-            ("🗑 Deletar  [Del]", COLORS["danger"],  self._delete_selected),
-        ]:
-            tk.Button(
-                action_bar, text=label,
-                bg=bg, fg=COLORS["bg"],
-                relief="flat", bd=0, padx=10, pady=4,
-                font=("Consolas", 8, "bold"), cursor="hand2",
-                command=cmd,
-            ).pack(side="left", padx=(0, 4))
+        ctk.CTkButton(
+            action_bar, text="☑ Toggle  [Space]", command=self._toggle_selected,
+            fg_color=C["accent"], hover_color=C["accent_hover"],
+            text_color=C["bg"], font=("Consolas", 11, "bold"),
+            width=160, height=32, corner_radius=6,
+        ).pack(side="left", padx=(0, 6))
 
-        self.status_label = tk.Label(
-            action_bar, text="",
-            bg=COLORS["bg"], fg=COLORS["text_dim"], font=("Consolas", 8)
+        ctk.CTkButton(
+            action_bar, text="🗂 Arquivar  [A]", command=self._archive_selected,
+            fg_color=C["accent2"], hover_color=("#7A5800", "#C8A020"),
+            text_color=C["bg"], font=("Consolas", 11, "bold"),
+            width=140, height=32, corner_radius=6,
+        ).pack(side="left", padx=(0, 6))
+
+        ctk.CTkButton(
+            action_bar, text="🗑 Deletar  [Del]", command=self._delete_selected,
+            fg_color=C["danger"], hover_color=C["danger_hover"],
+            text_color=("#FFFFFF", "#FFFFFF"), font=("Consolas", 11, "bold"),
+            width=140, height=32, corner_radius=6,
+        ).pack(side="left")
+
+        self.status_label = ctk.CTkLabel(
+            action_bar, text="", font=("Consolas", 9), text_color=C["text_dim"],
         )
         self.status_label.pack(side="right")
 
-        for widget in (self, self.listbox):
-            widget.bind("<space>",  lambda e: self._toggle_selected())
-            widget.bind("<Return>", lambda e: self._toggle_selected())
-            widget.bind("<a>",      lambda e: self._archive_selected())
-            widget.bind("<A>",      lambda e: self._archive_selected())
-            widget.bind("<Delete>", lambda e: self._delete_selected())
+        self.bind("<space>",  lambda e: self._toggle_selected())
+        self.bind("<Return>", lambda e: self._toggle_selected())
+        self.bind("<a>",      lambda e: self._archive_selected())
+        self.bind("<A>",      lambda e: self._archive_selected())
+        self.bind("<Delete>", lambda e: self._delete_selected())
 
     def refresh(self):
         self._tasks = self.storage.get_by_type("task")
@@ -116,7 +101,7 @@ class TasksView(tk.Frame):
     def _set_filter(self, key: str):
         self._filter = key
         for k, btn in self._filter_btns.items():
-            btn.config(bg=COLORS["surface2"] if k == key else COLORS["surface"])
+            btn.configure(fg_color=C["selected"] if k == key else C["surface"])
         self._apply_filter()
 
     def _apply_filter(self):
@@ -129,48 +114,79 @@ class TasksView(tk.Frame):
         self._render()
 
     def _render(self):
-        self.listbox.delete(0, "end")
-        for task in self._filtered:
-            check = "✓" if task.completed else "○"
-            line = task.content[:80].replace("\n", " ")
-            self.listbox.insert("end", f"  {check}  {line}")
-            if task.completed:
-                self.listbox.itemconfig("end", fg=COLORS["text_dim"])
-        self.status_label.config(text=f"{len(self._filtered)} tarefas")
+        for w in self.scroll.winfo_children():
+            w.destroy()
+        self._rows.clear()
 
-    def _on_select(self, _event=None):
-        sel = self.listbox.curselection()
-        if sel:
-            self._selected_idx = sel[0]
+        for task in self._filtered:
+            icon = "✓" if task.completed else "○"
+            line = task.content[:80].replace("\n", " ")
+            text_color = C["text_dim"] if task.completed else C["text"]
+
+            row = ctk.CTkFrame(self.scroll, fg_color=C["row"], corner_radius=6, cursor="hand2")
+            row.pack(fill="x", padx=4, pady=2)
+
+            ctk.CTkLabel(
+                row, text=icon, width=28,
+                font=("Consolas", 14, "bold"), text_color=C["accent"] if task.completed else C["text_dim"],
+            ).pack(side="left", padx=(10, 0), pady=8)
+
+            ctk.CTkLabel(
+                row, text=line,
+                anchor="w", text_color=text_color, font=("Consolas", 10),
+            ).pack(side="left", fill="x", expand=True, padx=8, pady=8)
+
+            handler = lambda e, eid=task.id: self._select(eid)
+            row.bind("<Button-1>", handler)
+            for child in row.winfo_children():
+                child.bind("<Button-1>", handler)
+
+            self._rows[task.id] = row
+
+        self.status_label.configure(text=f"{len(self._filtered)} tarefas")
+
+    def _select(self, entry_id: str):
+        prev = self._rows.get(self._selected_id or "")
+        if prev:
+            prev.configure(fg_color=C["row"])
+            for c in prev.winfo_children():
+                try: c.configure(fg_color=C["row"])
+                except Exception: pass
+
+        self._selected_id = entry_id
+        row = self._rows.get(entry_id)
+        if row:
+            row.configure(fg_color=C["selected"])
+            for c in row.winfo_children():
+                try: c.configure(fg_color=C["selected"])
+                except Exception: pass
+        self.focus_set()
 
     def _get_selected(self) -> Entry | None:
-        if 0 <= self._selected_idx < len(self._filtered):
-            return self._filtered[self._selected_idx]
-        return None
+        if not self._selected_id: return None
+        return next((t for t in self._filtered if t.id == self._selected_id), None)
 
     def _toggle_selected(self):
         task = self._get_selected()
-        if not task:
-            return
+        if not task: return
         self.storage.toggle_completed(task.id)
+        saved_id = self._selected_id
         self.refresh()
-        if self._selected_idx < self.listbox.size():
-            self.listbox.selection_set(self._selected_idx)
-            self.listbox.activate(self._selected_idx)
+        # Restaura seleção após refresh
+        if saved_id and saved_id in self._rows:
+            self._select(saved_id)
 
     def _archive_selected(self):
         task = self._get_selected()
-        if not task:
-            return
+        if not task: return
         self.storage.archive(task.id)
-        self._selected_idx = -1
+        self._selected_id = None
         self.refresh()
 
     def _delete_selected(self):
         task = self._get_selected()
-        if not task:
-            return
+        if not task: return
         if messagebox.askyesno("Deletar", "Tem certeza? Esta ação é permanente."):
             self.storage.delete(task.id)
-            self._selected_idx = -1
+            self._selected_id = None
             self.refresh()
