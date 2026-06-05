@@ -193,3 +193,20 @@ class Storage:
                 self._write(entries)
                 return True
         return False
+
+    def update_entry(self, entry_id: str, **fields) -> bool:
+        """Atualiza campos específicos de uma entrada existente pelo ID."""
+        entries = self._read()
+        for item in entries:
+            if item["id"] == entry_id:
+                for k, v in fields.items():
+                    if v is not None:
+                        item[k] = v
+                self._write(entries)
+                return True
+        return False
+
+
+def register_extra_types(extra: dict[str, dict]) -> None:
+    """Registra tipos adicionais de entrada — chamado pelo PluginManager."""
+    ENTRY_TYPES.update(extra)

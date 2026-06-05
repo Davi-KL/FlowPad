@@ -305,22 +305,51 @@ class DashboardWindow(ctk.CTkToplevel):
             self.unbind(shortcut.lower())
             self.unbind(shortcut.upper())
 
-        self.bind("<Escape>", lambda e: self._show_menu())
-        self.bind("<F5>",     lambda e: self._refresh_active())
-        self.bind("<n>",      lambda e: self._new_in_active_view())
-        self.bind("<N>",      lambda e: self._new_in_active_view())
-        self.bind("<Up>",     lambda e: self._view_nav(-1))
-        self.bind("<Down>",   lambda e: self._view_nav(1))
-        self.bind("<Return>", lambda e: self._view_enter())
-        self.bind("<space>",  lambda e: self._view_space())
-        self.bind("<c>",      lambda e: self._view_copy())
-        self.bind("<C>",      lambda e: self._view_copy())
-        self.bind("<a>",      lambda e: self._view_archive())
-        self.bind("<A>",      lambda e: self._view_archive())
-        self.bind("<Delete>", lambda e: self._view_delete())
-        self.bind("<Key-1>",  lambda e: self._view_filter(1))
-        self.bind("<Key-2>",  lambda e: self._view_filter(2))
-        self.bind("<Key-3>",  lambda e: self._view_filter(3))
+        def _g(fn):
+            """Guard: executa fn apenas se nenhum campo de texto tem foco."""
+            return lambda e: None if self._is_text_focused() else fn()
+
+        self.bind("<Escape>",        lambda e: self._handle_escape())
+        self.bind("<F5>",            lambda e: self._refresh_active())
+        self.bind("<n>",             _g(self._new_in_active_view))
+        self.bind("<N>",             _g(self._new_in_active_view))
+        self.bind("<Up>",            lambda e: self._view_nav(-1))
+        self.bind("<Down>",          lambda e: self._view_nav(1))
+        self.bind("<Return>",        _g(self._view_enter))
+        self.bind("<space>",         _g(self._view_space))
+        self.bind("<c>",             _g(self._view_copy))
+        self.bind("<C>",             _g(self._view_copy))
+        self.bind("<a>",             _g(self._view_archive))
+        self.bind("<A>",             _g(self._view_archive))
+        self.bind("<e>",             _g(self._view_edit))
+        self.bind("<E>",             _g(self._view_edit))
+        self.bind("<Delete>",        _g(self._view_delete))
+        self.bind("<Key-1>",         _g(lambda: self._view_filter(1)))
+        self.bind("<Key-2>",         _g(lambda: self._view_filter(2)))
+        self.bind("<Key-3>",         _g(lambda: self._view_filter(3)))
+        self.bind("<Control-f>",     lambda e: self._focus_search())
+        self.bind("<Control-F>",     lambda e: self._focus_search())
+
+    def _is_text_focused(self) -> bool:
+        """True quando um campo de texto (busca ou editor inline) tem o foco."""
+        w = self.focus_get()
+        return isinstance(w, (tk.Entry, tk.Text))
+
+    def _handle_escape(self):
+        """Esc: limpa busca se campo de texto focado, senão volta ao menu."""
+        if self._is_text_focused() and self._active_key:
+            view = self._views[self._active_key]
+            if hasattr(view, "_clear_search"):
+                view._clear_search()
+        else:
+            self._show_menu()
+
+    def _focus_search(self):
+        """Foca o campo de busca da visão ativa."""
+        if self._active_key:
+            view = self._views[self._active_key]
+            if hasattr(view, "focus_search"):
+                view.focus_search()
 
     def _on_up(self, event):
         self._selected_idx = (self._selected_idx - 1) % len(MENU_ITEMS)
@@ -369,6 +398,11 @@ class DashboardWindow(ctk.CTkToplevel):
         key = self._active_key
         if key and hasattr(self._views[key], "_delete_selected"):
             self._views[key]._delete_selected()
+
+    def _view_edit(self):
+        key = self._active_key
+        if key and hasattr(self._views[key], "_edit_selected"):
+            self._views[key]._edit_selected()
 
     def _view_filter(self, n: int):
         if self._active_key == "task":

@@ -1,6 +1,6 @@
 """
 ui/view_reminders.py
-Visão de Lembretes — cards ordenados por proximidade do horário.
+Visão de Lembretes — cards ordenados por proximidade com busca fuzzy e edição inline.
 Vencidos aparecem em vermelho; próximos em verde.
 """
 
@@ -13,6 +13,7 @@ import customtkinter as ctk
 
 from core.storage import Storage, Entry
 from ui.colors import COLORS as C
+from utils.fuzzy import fuzzy_match
 
 _OVERDUE  = ("#C0392B", "#FF7070")
 _UPCOMING = ("#1D8A4C", "#5CE07A")
@@ -26,6 +27,8 @@ class RemindersView(ctk.CTkFrame):
         self.storage = storage
         self.on_new = on_new
         self._reminders: list[Entry] = []
+        self._filtered: list[Entry] = []
+        self._search_text: str = ""
         self._selected_id: str | None = None
         self._rows: dict[str, ctk.CTkFrame] = {}
 
@@ -39,6 +42,19 @@ class RemindersView(ctk.CTkFrame):
             header, text="⏰  Lembretes",
             font=("Consolas", 13, "bold"), text_color=C["danger"],
         ).pack(side="left")
+
+        # Busca
+        self._search_var = tk.StringVar()
+        self._search_var.trace_add("write", lambda *_: self._on_search_changed())
+        self.search_entry = ctk.CTkEntry(
+            self, textvariable=self._search_var,
+            placeholder_text="🔍  Buscar...  [Ctrl+F]",
+            font=("Consolas", 10), height=30,
+            fg_color=C["surface"], text_color=C["text"],
+            border_color=C["border"], border_width=1,
+        )
+        self.search_entry.pack(fill="x", padx=12, pady=(0, 4))
+        self.search_entry.bind("<Escape>", self._on_search_escape)
 
         self.scroll = ctk.CTkScrollableFrame(
             self, fg_color=C["surface"], corner_radius=8,
@@ -61,6 +77,13 @@ class RemindersView(ctk.CTkFrame):
         action_bar.pack(fill="x", padx=12, pady=(0, 8))
 
         ctk.CTkButton(
+            action_bar, text="✏ Editar  [E]", command=self._edit_selected,
+            fg_color=C["surface"], hover_color=C["border"],
+            text_color=C["text"], font=("Consolas", 11, "bold"),
+            width=120, height=32, corner_radius=6,
+        ).pack(side="left", padx=(0, 6))
+
+        ctk.CTkButton(
             action_bar, text="🗂 Arquivar  [A]", command=self._archive_selected,
             fg_color=C["accent2"], hover_color=("#7A5800", "#C8A020"),
             text_color=C["bg"], font=("Consolas", 11, "bold"),
@@ -81,7 +104,31 @@ class RemindersView(ctk.CTkFrame):
 
         self.bind("<a>",      lambda e: self._archive_selected())
         self.bind("<A>",      lambda e: self._archive_selected())
+        self.bind("<e>",      lambda e: self._edit_selected())
+        self.bind("<E>",      lambda e: self._edit_selected())
         self.bind("<Delete>", lambda e: self._delete_selected())
+
+    # ── Busca ─────────────────────────────────────────────────────────────
+
+    def focus_search(self):
+        self.search_entry.focus_set()
+        self.search_entry._entry.select_range(0, "end")
+
+    def _clear_search(self):
+        self._search_var.set("")
+        self._search_text = ""
+        self.focus_set()
+
+    def _on_search_escape(self, event):
+        self._clear_search()
+        self._apply_filter()
+        return "break"
+
+    def _on_search_changed(self):
+        self._search_text = self._search_var.get()
+        self._apply_filter()
+
+    # ── Data ──────────────────────────────────────────────────────────────
 
     def refresh(self):
         all_r = self.storage.get_by_type("reminder")
@@ -95,6 +142,17 @@ class RemindersView(ctk.CTkFrame):
                 return float("inf")
 
         self._reminders = sorted(all_r, key=sort_key)
+        self._apply_filter()
+
+    def _apply_filter(self):
+        q = self._search_text.strip()
+        if q:
+            self._filtered = [
+                e for e in self._reminders
+                if fuzzy_match(q, e.content)
+            ]
+        else:
+            self._filtered = list(self._reminders)
         self._render()
 
     def _render(self):
@@ -103,7 +161,7 @@ class RemindersView(ctk.CTkFrame):
         self._rows.clear()
         now = datetime.now()
 
-        for entry in self._reminders:
+        for entry in self._filtered:
             status = "sem horário"
             text_color = C["text_dim"]
             if entry.reminder_at:
@@ -141,7 +199,11 @@ class RemindersView(ctk.CTkFrame):
 
             self._rows[entry.id] = row
 
-        self.status_label.configure(text=f"{len(self._reminders)} lembretes")
+        n = len(self._filtered)
+        total = len(self._reminders)
+        self.status_label.configure(
+            text=f"{n} de {total} lembretes" if self._search_text else f"{total} lembretes"
+        )
 
     def _select(self, entry_id: str):
         prev = self._rows.get(self._selected_id or "")
@@ -159,7 +221,7 @@ class RemindersView(ctk.CTkFrame):
                 try: c.configure(fg_color=C["selected"])
                 except Exception: pass
 
-        entry = next((e for e in self._reminders if e.id == entry_id), None)
+        entry = next((e for e in self._filtered if e.id == entry_id), None)
         if entry:
             detail = entry.content
             if entry.reminder_at:
@@ -173,24 +235,116 @@ class RemindersView(ctk.CTkFrame):
 
     def _get_selected(self) -> Entry | None:
         if not self._selected_id: return None
-        return next((e for e in self._reminders if e.id == self._selected_id), None)
+        return next((e for e in self._filtered if e.id == self._selected_id), None)
 
     # ── Navegação por teclado ─────────────────────────────────────────────
 
     def select_first(self):
-        if self._reminders:
-            self._select(self._reminders[0].id)
+        if self._filtered:
+            self._select(self._filtered[0].id)
 
     def _nav(self, direction: int):
-        if not self._reminders:
+        if not self._filtered:
             return
-        ids = [e.id for e in self._reminders]
+        ids = [e.id for e in self._filtered]
         try:
             current = ids.index(self._selected_id) if self._selected_id else -1
         except ValueError:
             current = -1
-        idx = (current + direction) % len(self._reminders)
-        self._select(self._reminders[idx].id)
+        idx = (current + direction) % len(self._filtered)
+        self._select(self._filtered[idx].id)
+
+    # ── Edição inline ─────────────────────────────────────────────────────
+
+    def _edit_selected(self):
+        entry = self._get_selected()
+        if not entry:
+            return
+        row = self._rows.get(entry.id)
+        if not row:
+            return
+        for w in row.winfo_children():
+            w.destroy()
+        row.configure(fg_color=C["selected"], cursor="arrow")
+
+        # Campo: texto do lembrete
+        ctk.CTkLabel(
+            row, text="Texto:", font=("Consolas", 9), text_color=C["text_dim"],
+        ).pack(anchor="w", padx=8, pady=(8, 0))
+        content_entry = ctk.CTkEntry(
+            row, font=("Consolas", 10), height=30,
+            fg_color=C["surface"], text_color=C["text"],
+            border_color=C["border"], border_width=1,
+        )
+        content_entry.pack(fill="x", padx=8, pady=(2, 6))
+        content_entry.insert(0, entry.content)
+        content_entry.focus_set()
+
+        # Campo: data/hora combinada
+        current_dt = ""
+        if entry.reminder_at:
+            try:
+                dt = datetime.fromisoformat(entry.reminder_at)
+                current_dt = dt.strftime("%d/%m/%Y %H:%M")
+            except ValueError:
+                pass
+
+        ctk.CTkLabel(
+            row, text="Data e hora  (DD/MM/AAAA HH:MM):",
+            font=("Consolas", 9), text_color=C["text_dim"],
+        ).pack(anchor="w", padx=8)
+        dt_entry = ctk.CTkEntry(
+            row, font=("Consolas", 10), height=30,
+            fg_color=C["surface"], text_color=C["text"],
+            border_color=C["border"], border_width=1,
+            placeholder_text="ex: 25/12/2025 09:30",
+        )
+        dt_entry.pack(fill="x", padx=8, pady=(2, 6))
+        if current_dt:
+            dt_entry.insert(0, current_dt)
+
+        btns = ctk.CTkFrame(row, fg_color=C["selected"], corner_radius=0)
+        btns.pack(fill="x", padx=8, pady=(0, 8))
+
+        def do_save():
+            new_text = content_entry.get().strip()
+            if not new_text:
+                content_entry.focus_set()
+                return
+            new_dt_str = dt_entry.get().strip()
+            new_reminder_at = _parse_datetime(new_dt_str)
+            self.storage.update_entry(entry.id, content=new_text, reminder_at=new_reminder_at)
+            eid = entry.id
+            self.refresh()
+            if eid in self._rows:
+                self._select(eid)
+
+        def do_cancel():
+            eid = entry.id
+            self.refresh()
+            if eid in self._rows:
+                self._select(eid)
+
+        content_entry.bind("<Control-Return>", lambda e: do_save())
+        content_entry.bind("<Escape>",         lambda e: do_cancel())
+        dt_entry.bind("<Control-Return>",      lambda e: do_save())
+        dt_entry.bind("<Escape>",              lambda e: do_cancel())
+
+        ctk.CTkButton(
+            btns, text="Salvar  Ctrl+↵", command=do_save,
+            fg_color=C["accent"], hover_color=C["accent_hover"],
+            text_color=C["bg"], font=("Consolas", 10, "bold"),
+            width=120, height=26, corner_radius=4,
+        ).pack(side="left", padx=(0, 4))
+
+        ctk.CTkButton(
+            btns, text="Cancelar  Esc", command=do_cancel,
+            fg_color=C["surface"], hover_color=C["border"],
+            text_color=C["text_dim"], font=("Consolas", 10),
+            width=110, height=26, corner_radius=4,
+        ).pack(side="left")
+
+    # ── Actions ───────────────────────────────────────────────────────────
 
     def _archive_selected(self):
         entry = self._get_selected()
@@ -212,3 +366,27 @@ class RemindersView(ctk.CTkFrame):
                 text="Selecione um lembrete para ver detalhes", text_color=C["text_dim"],
             )
             self.refresh()
+
+
+def _parse_datetime(value: str) -> str | None:
+    """Converte 'DD/MM/AAAA HH:MM' ou 'DD/MM HH:MM' para ISO format."""
+    value = value.strip()
+    if not value:
+        return None
+    for fmt in ("%d/%m/%Y %H:%M", "%d/%m %H:%M"):
+        try:
+            if fmt == "%d/%m %H:%M":
+                dt = datetime.strptime(f"{datetime.now().year}/{value}", f"%Y/{fmt[:-6]}%H:%M".replace("//", "/"))
+                # reconstruct properly
+                parts = value.split()
+                day_month = parts[0]
+                time_part = parts[1] if len(parts) > 1 else "00:00"
+                day, month = day_month.split("/")
+                h, m = time_part.split(":")
+                dt = datetime(datetime.now().year, int(month), int(day), int(h), int(m))
+            else:
+                dt = datetime.strptime(value, fmt)
+            return dt.isoformat()
+        except (ValueError, IndexError):
+            continue
+    return None

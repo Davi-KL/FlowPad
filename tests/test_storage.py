@@ -115,3 +115,28 @@ class TestStorage:
         e = Entry(content="Done", entry_type="task", completed=True)
         e2 = Entry.from_dict(e.to_dict())
         assert e2.completed is True
+
+    def test_update_entry_patches_content(self, storage):
+        entry = storage.save(Entry(content="Original"))
+        result = storage.update_entry(entry.id, content="Modificado")
+        assert result is True
+        found = storage.get_all()[0]
+        assert found.content == "Modificado"
+
+    def test_update_entry_preserves_other_fields(self, storage):
+        entry = storage.save(Entry(content="Texto", title="Título original", entry_type="note"))
+        storage.update_entry(entry.id, content="Novo texto")
+        found = storage.get_all()[0]
+        assert found.title == "Título original"
+        assert found.entry_type == "note"
+
+    def test_update_entry_returns_false_for_missing_id(self, storage):
+        result = storage.update_entry("id-inexistente", content="Algo")
+        assert result is False
+
+    def test_update_entry_ignores_none_values(self, storage):
+        entry = storage.save(Entry(content="Original", title="Título"))
+        storage.update_entry(entry.id, title=None, content="Novo")
+        found = storage.get_all()[0]
+        assert found.title == "Título"
+        assert found.content == "Novo"

@@ -1,6 +1,6 @@
 """
 ui/view_tasks.py
-Visão de Tarefas — lista to-do com checkboxes e filtros Pendentes/Concluídas.
+Visão de Tarefas — lista to-do com checkboxes, filtros e busca fuzzy.
 """
 
 import tkinter as tk
@@ -11,10 +11,11 @@ import customtkinter as ctk
 
 from core.storage import Storage, Entry
 from ui.colors import COLORS as C
+from utils.fuzzy import fuzzy_match
 
 
 class TasksView(ctk.CTkFrame):
-    """To-Do list com checkboxes e filtros Todas/Pendentes/Concluídas."""
+    """To-Do list com checkboxes, filtros Todas/Pendentes/Concluídas e busca fuzzy."""
 
     def __init__(self, master: tk.Widget, storage: Storage, on_new: Callable):
         super().__init__(master, fg_color=C["bg"], corner_radius=0)
@@ -23,6 +24,7 @@ class TasksView(ctk.CTkFrame):
         self._tasks: list[Entry] = []
         self._filtered: list[Entry] = []
         self._filter = "all"
+        self._search_text: str = ""
         self._selected_id: str | None = None
         self._rows: dict[str, ctk.CTkFrame] = {}
 
@@ -52,6 +54,19 @@ class TasksView(ctk.CTkFrame):
             btn.pack(side="right", padx=2)
             self._filter_btns[key] = btn
 
+        # Busca
+        self._search_var = tk.StringVar()
+        self._search_var.trace_add("write", lambda *_: self._on_search_changed())
+        self.search_entry = ctk.CTkEntry(
+            self, textvariable=self._search_var,
+            placeholder_text="🔍  Buscar...  [Ctrl+F]",
+            font=("Consolas", 10), height=30,
+            fg_color=C["surface"], text_color=C["text"],
+            border_color=C["border"], border_width=1,
+        )
+        self.search_entry.pack(fill="x", padx=12, pady=(0, 4))
+        self.search_entry.bind("<Escape>", self._on_search_escape)
+
         self.scroll = ctk.CTkScrollableFrame(
             self, fg_color=C["surface"], corner_radius=8,
             scrollbar_button_color=C["border"],
@@ -67,6 +82,13 @@ class TasksView(ctk.CTkFrame):
             fg_color=C["accent"], hover_color=C["accent_hover"],
             text_color=C["bg"], font=("Consolas", 11, "bold"),
             width=160, height=32, corner_radius=6,
+        ).pack(side="left", padx=(0, 6))
+
+        ctk.CTkButton(
+            action_bar, text="✏ Editar  [E]", command=self._edit_selected,
+            fg_color=C["surface"], hover_color=C["border"],
+            text_color=C["text"], font=("Consolas", 11, "bold"),
+            width=120, height=32, corner_radius=6,
         ).pack(side="left", padx=(0, 6))
 
         ctk.CTkButton(
@@ -92,7 +114,31 @@ class TasksView(ctk.CTkFrame):
         self.bind("<Return>", lambda e: self._toggle_selected())
         self.bind("<a>",      lambda e: self._archive_selected())
         self.bind("<A>",      lambda e: self._archive_selected())
+        self.bind("<e>",      lambda e: self._edit_selected())
+        self.bind("<E>",      lambda e: self._edit_selected())
         self.bind("<Delete>", lambda e: self._delete_selected())
+
+    # ── Busca ─────────────────────────────────────────────────────────────
+
+    def focus_search(self):
+        self.search_entry.focus_set()
+        self.search_entry._entry.select_range(0, "end")
+
+    def _clear_search(self):
+        self._search_var.set("")
+        self._search_text = ""
+        self.focus_set()
+
+    def _on_search_escape(self, event):
+        self._clear_search()
+        self._apply_filter()
+        return "break"
+
+    def _on_search_changed(self):
+        self._search_text = self._search_var.get()
+        self._apply_filter()
+
+    # ── Data ──────────────────────────────────────────────────────────────
 
     def refresh(self):
         self._tasks = self.storage.get_by_type("task")
@@ -106,11 +152,17 @@ class TasksView(ctk.CTkFrame):
 
     def _apply_filter(self):
         if self._filter == "pending":
-            self._filtered = [t for t in self._tasks if not t.completed]
+            items = [t for t in self._tasks if not t.completed]
         elif self._filter == "completed":
-            self._filtered = [t for t in self._tasks if t.completed]
+            items = [t for t in self._tasks if t.completed]
         else:
-            self._filtered = list(self._tasks)
+            items = list(self._tasks)
+
+        q = self._search_text.strip()
+        if q:
+            items = [t for t in items if fuzzy_match(q, t.content)]
+
+        self._filtered = items
         self._render()
 
     def _render(self):
@@ -143,7 +195,11 @@ class TasksView(ctk.CTkFrame):
 
             self._rows[task.id] = row
 
-        self.status_label.configure(text=f"{len(self._filtered)} tarefas")
+        n = len(self._filtered)
+        total = len(self._tasks)
+        self.status_label.configure(
+            text=f"{n} de {total} tarefas" if self._search_text else f"{n} tarefas"
+        )
 
     def _select(self, entry_id: str):
         prev = self._rows.get(self._selected_id or "")
@@ -183,13 +239,70 @@ class TasksView(ctk.CTkFrame):
         idx = (current + direction) % len(self._filtered)
         self._select(self._filtered[idx].id)
 
+    # ── Edição inline ─────────────────────────────────────────────────────
+
+    def _edit_selected(self):
+        task = self._get_selected()
+        if not task:
+            return
+        row = self._rows.get(task.id)
+        if not row:
+            return
+        for w in row.winfo_children():
+            w.destroy()
+        row.configure(fg_color=C["selected"], cursor="arrow")
+
+        box = ctk.CTkTextbox(
+            row, font=("Consolas", 10), height=70, wrap="word",
+            fg_color=C["surface"], text_color=C["text"],
+        )
+        box.pack(fill="x", padx=8, pady=(8, 4))
+        box.insert("0.0", task.content)
+        box.focus_set()
+
+        btns = ctk.CTkFrame(row, fg_color=C["selected"], corner_radius=0)
+        btns.pack(fill="x", padx=8, pady=(0, 8))
+
+        def do_save():
+            new_text = box.get("0.0", "end").strip()
+            if new_text:
+                self.storage.update_entry(task.id, content=new_text)
+            tid = task.id
+            self.refresh()
+            if tid in self._rows:
+                self._select(tid)
+
+        def do_cancel():
+            tid = task.id
+            self.refresh()
+            if tid in self._rows:
+                self._select(tid)
+
+        box.bind("<Escape>",         lambda e: do_cancel())
+        box.bind("<Control-Return>", lambda e: do_save())
+
+        ctk.CTkButton(
+            btns, text="Salvar  Ctrl+↵", command=do_save,
+            fg_color=C["accent"], hover_color=C["accent_hover"],
+            text_color=C["bg"], font=("Consolas", 10, "bold"),
+            width=120, height=26, corner_radius=4,
+        ).pack(side="left", padx=(0, 4))
+
+        ctk.CTkButton(
+            btns, text="Cancelar  Esc", command=do_cancel,
+            fg_color=C["surface"], hover_color=C["border"],
+            text_color=C["text_dim"], font=("Consolas", 10),
+            width=110, height=26, corner_radius=4,
+        ).pack(side="left")
+
+    # ── Actions ───────────────────────────────────────────────────────────
+
     def _toggle_selected(self):
         task = self._get_selected()
         if not task: return
         self.storage.toggle_completed(task.id)
         saved_id = self._selected_id
         self.refresh()
-        # Restaura seleção após refresh
         if saved_id and saved_id in self._rows:
             self._select(saved_id)
 

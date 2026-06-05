@@ -52,12 +52,14 @@ class QuickCaptureWindow(ctk.CTkToplevel):
         storage: Storage,
         config: Config,
         default_type: str = "insight",
+        start_editing: bool = False,
     ):
         super().__init__(master)
         self.storage = storage
         self.config = config
         self._current_type = default_type if default_type in TYPE_CONFIG else "insight"
         self._editing = False   # False = modo seleção, True = campos visíveis
+        self._start_editing = start_editing
 
         self._configure_window()
         self._build_static_ui()
@@ -75,6 +77,8 @@ class QuickCaptureWindow(ctk.CTkToplevel):
         self.focus_force()
         self.grab_set()
         self._fade_in()
+        if self._start_editing:
+            self.after(50, self._enter_edit_mode)
 
     def _fade_in(self):
         alpha = self.attributes("-alpha")
