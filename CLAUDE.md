@@ -108,27 +108,38 @@ Escolha intencional para o MVP:
 
 | Atalho | Ação |
 |---|---|
-| `Ctrl + Enter` | Salva a entrada |
-| `Escape` | Fecha sem salvar |
-| `Ctrl + 1` | Tipo: Insight 💡 |
-| `Ctrl + 2` | Tipo: Lembrete ⏰ |
-| `Ctrl + 3` | Tipo: Clipboard 📋 |
-| `Ctrl + 4` | Tipo: Tarefa ✅ |
-| `Ctrl + 5` | Tipo: Nota 📝 |
-| `Tab` | Próximo campo |
-| `Shift + Tab` | Campo anterior |
+| `1` – `5` | Trocar tipo em modo seleção |
+| `Enter` | Confirmar tipo e abrir campos |
+| `Escape` | Fechar sem salvar |
+| `Enter` | Salvar (campo único: insight, clipboard, tarefa) |
+| `Shift + Enter` | Nova linha (campo único) |
+| `Ctrl + Enter` | Salvar (Lembrete e Nota, de qualquer campo) |
+| `Tab` / `Enter` | Avançar campo (Lembrete: texto → hora → data) |
+| `Enter` no título | Mover foco ao conteúdo (Nota) |
 
-### No dashboard
+### No dashboard — Menu principal
 
 | Atalho | Ação |
 |---|---|
-| `N` | Nova captura |
-| `C` | Copiar entrada selecionada |
-| `A` | Arquivar entrada selecionada |
-| `Delete` | Deletar entrada selecionada |
+| `↑ / ↓` | Navegar entre cards |
+| `Enter` | Abrir visão do card selecionado |
+| `I` / `L` / `C` / `T` / `N` | Abrir Insights / Lembretes / Clipboard / Tarefas / Notas |
+| `Escape` | Fechar o dashboard |
+
+### No dashboard — Dentro de uma visão
+
+| Atalho | Ação |
+|---|---|
+| `↑ / ↓` | Navegar pelos itens da lista |
+| `Enter` | Ação primária (copiar ou marcar tarefa) |
+| `Space` | Marcar / desmarcar tarefa |
+| `C` | Copiar item selecionado |
+| `A` | Arquivar item selecionado |
+| `Delete` | Deletar item selecionado |
+| `N` | Nova captura no tipo atual |
 | `F5` | Atualizar lista |
-| `Ctrl + F` | Focar campo de busca |
-| `↑ / ↓` | Navegar na lista |
+| `1` / `2` / `3` | Filtrar tarefas: Todas / Pendentes / Concluídas |
+| `Escape` | Voltar ao menu principal |
 
 ---
 
@@ -185,6 +196,26 @@ pyinstaller flowpad.spec
 ---
 
 ## 📋 Roadmap de Sprints
+
+### ✅ Sprint 4 — UX Polish & Navegação por Teclado (concluída)
+
+**Objetivo:** Redesenhar o dashboard como menu de cards, adicionar navegação completa por teclado nas visões e reformular a captura rápida com layout multi-campo para Lembrete e Nota.
+
+**O que foi entregue:**
+- [x] **[REFACTOR] `ui/dashboard.py`** — reescrito como máquina de estados `menu` | `view`; menu com 5 cards estilizados (barra colorida por tipo, contagem de entradas, atalhos de letra I/L/C/T/N, navegação ↑↓/Enter)
+- [x] **[FEAT] Navegação por teclado nas visões** — auto-seleção do primeiro item ao abrir; ↑↓ navegam a lista; Enter executa ação primária; C/A/Del funcionam em todas as visões; 1/2/3 filtram tarefas
+- [x] **[FEAT] `select_first()` e `_nav()`** — adicionados aos 5 views para suportar navegação do dashboard
+- [x] **[REFACTOR] `ui/quick_capture.py`** — Lembrete com 3 campos simultâneos (texto + hora HH:MM + data DD/MM); Nota com título + conteúdo lado a lado; máscara automática insere `:` e `/` após 2 dígitos e avança o foco
+- [x] **[FIX] Modo seleção preservado na captura rápida** — janela ainda abre pedindo confirmação com Enter antes de exibir os campos
+
+**Decisões técnicas desta sprint:**
+- Todos os key bindings de visão centralizados no `DashboardWindow` (CTkToplevel) — `CTkFrame` não recebe foco de teclado, portanto bindings em frames filhos não disparavam; solução: métodos `_view_nav/copy/archive/delete/filter` no dashboard delegam para a visão ativa via `_active_key`
+- `_nav(direction)` com índice circular e busca por ID — robusto a re-renders que destroem e recriam widgets
+- Máscara de entrada implementada via `<KeyPress>` binding com `return "break"` — controla inserção manualmente sem `validatecommand`, mais previsível em Tkinter nativo
+- `_editing` flag na quick_capture separa modo seleção (só visual, 1–5 trocam tipo) de modo edição (campos ativos, 1–5 não interferem)
+- `select_first()` chamado pelo dashboard após `view.refresh()` toda vez que uma visão é aberta
+
+---
 
 ### ✅ Sprint 3 — Polish Visual (concluída)
 
@@ -426,5 +457,5 @@ pyinstaller flowpad.spec
 
 ---
 
-*Última atualização: Sprint 3 — Polish Visual*
-*Próxima atualização prevista: ao finalizar Sprint 4 (Recursos Avançados)*
+*Última atualização: Sprint 4 — UX Polish & Navegação por Teclado*
+*Próxima atualização prevista: ao finalizar Sprint 5 (Recursos Avançados)*
