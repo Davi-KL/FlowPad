@@ -8,7 +8,7 @@ Obrigado por considerar contribuir com o FlowPad! Este guia explica como configu
 
 ```bash
 # Clone o repositório
-git clone https://github.com/seu-usuario/flowpad.git
+git clone https://github.com/Davi-KL/FlowPad.git
 cd flowpad
 
 # Crie e ative um ambiente virtual
@@ -63,7 +63,7 @@ docs/        → Documentação adicional
 
 ## Fluxo para contribuir
 
-1. Veja os [issues abertos](https://github.com/seu-usuario/flowpad/issues)
+1. Veja os [issues abertos](https://github.com/Davi-KL/FlowPad/issues)
 2. Comente no issue que vai trabalhar nele
 3. Crie uma branch descritiva:
    ```bash
@@ -100,4 +100,4 @@ style: formatação, sem mudança lógica
 
 ## Dúvidas?
 
-Abra uma [issue](https://github.com/seu-usuario/flowpad/issues) com a label `question`.
+Abra uma [issue](https://github.com/Davi-KL/FlowPad/issues) com a label `question`.

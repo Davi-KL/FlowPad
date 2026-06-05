@@ -44,14 +44,14 @@ Pronto. Em menos de 3 segundos você está de volta ao que estava fazendo.
 
 ### Opção 1: Executável (.exe) — recomendado para usuários Windows
 
-Baixe o `FlowPad.exe` na página de [Releases](https://github.com/seu-usuario/flowpad/releases).
+Baixe o `FlowPad.exe` na página de [Releases](https://github.com/Davi-KL/FlowPad/releases).
 
 Sem instalação, sem dependências. Execute e comece a usar.
 
 ### Opção 2: Do código fonte
 
 ```bash
-git clone https://github.com/seu-usuario/flowpad.git
+git clone https://github.com/Davi-KL/FlowPad.git
 cd flowpad
 python -m venv .venv
 .venv\Scripts\activate      # Windows
@@ -108,7 +108,7 @@ Para entender a arquitetura completa, decisões técnicas e roadmap detalhado, c
 
 Contribuições são muito bem-vindas!
 
-1. Veja os [issues abertos](https://github.com/seu-usuario/flowpad/issues)
+1. Veja os [issues abertos](https://github.com/Davi-KL/FlowPad/issues)
 2. Fork e crie uma branch: `git checkout -b feat/sua-feature`
 3. Leia o [CLAUDE.md](./CLAUDE.md) para entender os padrões do projeto
 4. Abra um PR descrevendo sua mudança

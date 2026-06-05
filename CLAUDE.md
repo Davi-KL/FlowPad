@@ -145,7 +145,7 @@ Escolha intencional para o MVP:
 
 ```bash
 # Clone o repositório
-git clone https://github.com/seu-usuario/flowpad.git
+git clone https://github.com/Davi-KL/FlowPad.git
 cd flowpad
 
 # Crie um ambiente virtual (recomendado)
