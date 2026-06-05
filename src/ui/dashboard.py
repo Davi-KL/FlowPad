@@ -1,11 +1,13 @@
 """
 ui/dashboard.py
 Dashboard principal — navegação por abas entre as 5 visões de tipo.
-Cada aba contém uma visão especializada (tasks, insights, clipboard, reminders, notes).
+Inclui seletor de tema Dark/Light no cabeçalho.
 """
 
 import tkinter as tk
 from typing import Callable
+
+import customtkinter as ctk
 
 from core.storage import Storage
 from utils.config import Config
@@ -14,36 +16,26 @@ from ui.view_insights import InsightsView
 from ui.view_clipboard import ClipboardView
 from ui.view_reminders import RemindersView
 from ui.view_notes import NotesView
+from ui.colors import COLORS as C
 
 
-COLORS = {
-    "bg":       "#1A1A2E",
-    "surface":  "#16213E",
-    "tab_bar":  "#0D1B33",
-    "tab_on":   "#0F3460",
-    "text":     "#E8EAF0",
-    "text_dim": "#8892A4",
-    "accent":   "#5CE07A",
-}
-
-TABS: list[tuple[str, str, str, str]] = [
-    ("💡", "Insights",  "insight",   "#F4C542"),
-    ("⏰", "Lembretes", "reminder",  "#E05C5C"),
-    ("📋", "Clipboard", "clipboard", "#5CB8E0"),
-    ("✅", "Tarefas",   "task",      "#5CE07A"),
-    ("📝", "Notas",     "note",      "#A07AE0"),
+TABS: list[tuple[str, str, str, tuple]] = [
+    ("💡", "Insights",  "insight",   ("#9A7000", "#F4C542")),
+    ("⏰", "Lembretes", "reminder",  ("#C0392B", "#E05C5C")),
+    ("📋", "Clipboard", "clipboard", ("#1A6B8A", "#5CB8E0")),
+    ("✅", "Tarefas",   "task",      ("#1D8A4C", "#5CE07A")),
+    ("📝", "Notas",     "note",      ("#6B3FA0", "#A07AE0")),
 ]
 
 
-class DashboardWindow(tk.Toplevel):
+class DashboardWindow(ctk.CTkToplevel):
     """
-    Dashboard com 5 abas, uma por tipo de entrada.
-    Cada aba carrega sua visão especializada.
+    Dashboard com 5 abas especializadas e alternador de tema Dark/Light.
     """
 
     def __init__(
         self,
-        master: tk.Tk,
+        master: ctk.CTk,
         storage: Storage,
         config: Config,
         on_open_capture: Callable,
@@ -53,8 +45,8 @@ class DashboardWindow(tk.Toplevel):
         self.config = config
         self.on_open_capture = on_open_capture
         self._active_tab = "insight"
-        self._views: dict[str, tk.Frame] = {}
-        self._tab_buttons: dict[str, tk.Button] = {}
+        self._views: dict[str, ctk.CTkFrame] = {}
+        self._tab_buttons: dict[str, ctk.CTkButton] = {}
 
         self._configure_window()
         self._build_ui()
@@ -62,11 +54,11 @@ class DashboardWindow(tk.Toplevel):
 
     def _configure_window(self):
         self.title("FlowPad — Dashboard")
-        w = self.config.get("window", {}).get("dashboard_width", 860)
-        h = self.config.get("window", {}).get("dashboard_height", 600)
+        w = self.config.get("window", {}).get("dashboard_width", 900)
+        h = self.config.get("window", {}).get("dashboard_height", 620)
         self.geometry(f"{w}x{h}")
-        self.configure(bg=COLORS["bg"])
-        self.minsize(700, 450)
+        self.configure(fg_color=C["bg"])
+        self.minsize(700, 480)
 
         self.update_idletasks()
         sw = self.winfo_screenwidth()
@@ -77,40 +69,53 @@ class DashboardWindow(tk.Toplevel):
 
     def _build_ui(self):
         # ── Header ────────────────────────────────────────────────────────
-        header = tk.Frame(self, bg=COLORS["surface"], padx=16, pady=8)
+        header = ctk.CTkFrame(self, fg_color=C["surface"], corner_radius=0, height=52)
         header.pack(fill="x")
+        header.pack_propagate(False)
 
-        tk.Label(
+        ctk.CTkLabel(
             header, text="FlowPad",
-            bg=COLORS["surface"], fg=COLORS["accent"],
-            font=("Consolas", 13, "bold")
-        ).pack(side="left")
+            font=("Consolas", 14, "bold"), text_color=C["accent"],
+        ).pack(side="left", padx=16)
 
-        tk.Button(
-            header, text="+ Nova  [N]",
-            bg=COLORS["accent"], fg=COLORS["bg"],
-            relief="flat", bd=0, padx=10, pady=4,
-            font=("Consolas", 9, "bold"), cursor="hand2",
-            command=self._new_for_active_tab,
-        ).pack(side="right")
+        # Theme toggle
+        self._theme_var = ctk.StringVar(
+            value=self.config.get("theme", "dark").capitalize()
+        )
+        ctk.CTkSegmentedButton(
+            header,
+            values=["Dark", "Light"],
+            variable=self._theme_var,
+            command=self._on_theme_change,
+            font=("Consolas", 10),
+            width=130, height=28,
+        ).pack(side="right", padx=16)
+
+        ctk.CTkButton(
+            header, text="+ Nova  [N]", command=self._new_for_active_tab,
+            fg_color=C["accent"], hover_color=C["accent_hover"],
+            text_color=C["bg"], font=("Consolas", 11, "bold"),
+            width=110, height=32, corner_radius=6,
+        ).pack(side="right", padx=(0, 8))
 
         # ── Tab bar ───────────────────────────────────────────────────────
-        tab_bar = tk.Frame(self, bg=COLORS["tab_bar"], padx=4, pady=0)
+        tab_bar = ctk.CTkFrame(self, fg_color=C["row"], corner_radius=0, height=44)
         tab_bar.pack(fill="x")
+        tab_bar.pack_propagate(False)
 
         for icon, label, key, color in TABS:
-            btn = tk.Button(
+            btn = ctk.CTkButton(
                 tab_bar, text=f"{icon} {label}",
-                bg=COLORS["tab_bar"], fg=COLORS["text_dim"],
-                relief="flat", bd=0, padx=14, pady=8,
-                font=("Consolas", 9), cursor="hand2",
+                fg_color="transparent", hover_color=C["border"],
+                text_color=C["text_dim"], font=("Consolas", 10),
+                corner_radius=0, width=110, height=44,
                 command=lambda k=key: self._switch_tab(k),
             )
             btn.pack(side="left")
             self._tab_buttons[key] = btn
 
-        # ── Content frame ─────────────────────────────────────────────────
-        self.content_frame = tk.Frame(self, bg=COLORS["bg"])
+        # ── Content area ──────────────────────────────────────────────────
+        self.content_frame = ctk.CTkFrame(self, fg_color=C["bg"], corner_radius=0)
         self.content_frame.pack(fill="both", expand=True)
 
         self._views["insight"] = InsightsView(
@@ -147,14 +152,14 @@ class DashboardWindow(tk.Toplevel):
 
         for k, btn in self._tab_buttons.items():
             if k == key:
-                btn.config(
-                    bg=COLORS["tab_on"], fg=tab_color,
-                    font=("Consolas", 9, "bold"),
+                btn.configure(
+                    fg_color=C["selected"], text_color=tab_color,
+                    font=("Consolas", 10, "bold"),
                 )
             else:
-                btn.config(
-                    bg=COLORS["tab_bar"], fg=COLORS["text_dim"],
-                    font=("Consolas", 9),
+                btn.configure(
+                    fg_color="transparent", text_color=C["text_dim"],
+                    font=("Consolas", 10),
                 )
 
         for k, view in self._views.items():
@@ -163,6 +168,11 @@ class DashboardWindow(tk.Toplevel):
                 view.refresh()
             else:
                 view.pack_forget()
+
+    def _on_theme_change(self, value: str):
+        mode = value.lower()
+        ctk.set_appearance_mode(mode)
+        self.config.set("theme", mode)
 
     def _new_for_active_tab(self):
         self.on_open_capture(self._active_tab)
