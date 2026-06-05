@@ -1,46 +1,60 @@
 """
 ui/quick_capture.py
-Janela de captura rápida — o coração do FlowPad.
-Abre instantaneamente, permite navegar 100% pelo teclado e fecha sozinha após salvar.
+Janela de captura rápida — minimalista e focada.
+
+Fluxo:
+  1. Abre em modo seleção (janela com foco, text area vazia).
+  2. Teclas 1–4 escolhem o tipo e entram no modo escrita automaticamente.
+  3. Qualquer outra tecla printável também entra no modo escrita
+     (o caractere já aparece digitado).
+  4. Enter salva e fecha. Shift+Enter insere nova linha. Esc fecha sem salvar.
+  5. grab_set() bloqueia qualquer outra janela enquanto esta estiver aberta.
 """
 
 import tkinter as tk
-from tkinter import ttk
-from datetime import datetime, timedelta
-
-from core.storage import Storage, Entry, ENTRY_TYPES
+from core.storage import Storage, Entry
 from utils.config import Config
 
 
-# ──────────────────────────────────────────────
-# Paleta de cores (Dark Theme)
-# ──────────────────────────────────────────────
-COLORS = {
-    "bg":          "#1A1A2E",
-    "surface":     "#16213E",
-    "border":      "#0F3460",
-    "accent":      "#5CE07A",
-    "accent2":     "#F4C542",
-    "text":        "#E8EAF0",
-    "text_dim":    "#8892A4",
-    "insight":     "#F4C542",
-    "reminder":    "#E05C5C",
-    "clipboard":   "#5CB8E0",
-    "task":        "#5CE07A",
-    "note":        "#A07AE0",
+# ──────────────────────────────────────────────────────────────────────
+# Configuração visual por tipo
+# ──────────────────────────────────────────────────────────────────────
+TYPE_CONFIG = {
+    "insight": {
+        "label":      "💡  INSIGHT",
+        "bg":         "#F4C542",
+        "header_fg":  "#1A1A2E",
+        "cursor":     "#C9A020",
+    },
+    "reminder": {
+        "label":      "⏰  LEMBRETE",
+        "bg":         "#E05C5C",
+        "header_fg":  "#FFFFFF",
+        "cursor":     "#B03840",
+    },
+    "clipboard": {
+        "label":      "📋  CLIPBOARD",
+        "bg":         "#5CB8E0",
+        "header_fg":  "#1A1A2E",
+        "cursor":     "#3A90B8",
+    },
+    "task": {
+        "label":      "✅  TAREFA",
+        "bg":         "#5CE07A",
+        "header_fg":  "#1A1A2E",
+        "cursor":     "#38B058",
+    },
 }
 
-TYPE_KEYS = list(ENTRY_TYPES.keys())  # ["insight", "reminder", "clipboard", "task", "note"]
+TYPES = list(TYPE_CONFIG.keys())   # ordem: insight, reminder, clipboard, task
+TEXT_BG = "#FAFAFA"
+TEXT_FG = "#1A1A2E"
 
 
 class QuickCaptureWindow(tk.Toplevel):
     """
-    Janela popup de captura rápida.
-    Atalhos internos:
-      Tab / Shift+Tab  — navega entre campos
-      Ctrl+1..5        — muda o tipo de entrada
-      Ctrl+Enter       — salva
-      Escape           — fecha sem salvar
+    Popup de captura rápida com fundo colorido por tipo.
+    Modal: bloqueia interação com qualquer outra janela enquanto aberta.
     """
 
     def __init__(
@@ -53,37 +67,41 @@ class QuickCaptureWindow(tk.Toplevel):
         super().__init__(master)
         self.storage = storage
         self.config = config
-        self.selected_type = tk.StringVar(value=default_type)
+        self._current_type = default_type if default_type in TYPE_CONFIG else "insight"
+        self._writing = False   # False = modo seleção | True = modo escrita
 
         self._configure_window()
         self._build_ui()
+        self._apply_type(self._current_type)
         self._bind_keys()
-        self._center_on_screen()
+        self._center()
 
-        self.content_text.focus_set()
+        # Aguarda o Tkinter terminar de renderizar antes de capturar o foco.
+        # Sem esse delay, o grab_set falha silenciosamente na 2ª abertura no Windows.
+        self.after(50, self._activate)
 
     # ------------------------------------------------------------------
-    # Configuração da janela
+    # Janela
     # ------------------------------------------------------------------
+
+    def _activate(self):
+        """Força foco e modal após a janela estar totalmente renderizada."""
+        self.lift()
+        self.focus_force()
+        self.grab_set()
 
     def _configure_window(self):
-        self.title("FlowPad — Captura Rápida")
-        w = self.config.get("window", {}).get("capture_width", 480)
-        h = self.config.get("window", {}).get("capture_height", 320)
-        self.geometry(f"{w}x{h}")
+        self.title("FlowPad")
+        self.geometry("440x215")
         self.resizable(False, False)
-        self.configure(bg=COLORS["bg"])
-        self.attributes("-topmost", True)  # Sempre à frente
-        self.overrideredirect(False)
+        self.attributes("-topmost", True)
 
-    def _center_on_screen(self):
+    def _center(self):
         self.update_idletasks()
         sw = self.winfo_screenwidth()
         sh = self.winfo_screenheight()
-        w = self.winfo_width()
-        h = self.winfo_height()
-        x = (sw - w) // 2
-        y = (sh - h) // 3  # Levemente acima do centro
+        x = (sw - self.winfo_width()) // 2
+        y = (sh - self.winfo_height()) // 3   # Levemente acima do centro
         self.geometry(f"+{x}+{y}")
 
     # ------------------------------------------------------------------
@@ -91,215 +109,131 @@ class QuickCaptureWindow(tk.Toplevel):
     # ------------------------------------------------------------------
 
     def _build_ui(self):
-        # ── Header ──────────────────────────────────────────────────────
-        header = tk.Frame(self, bg=COLORS["surface"], pady=8, padx=12)
-        header.pack(fill="x")
-
-        tk.Label(
-            header, text="✏️  FlowPad", bg=COLORS["surface"],
-            fg=COLORS["accent"], font=("Consolas", 11, "bold")
-        ).pack(side="left")
-
-        hint = tk.Label(
-            header, text="Ctrl+Enter salva  •  Esc fecha",
-            bg=COLORS["surface"], fg=COLORS["text_dim"], font=("Consolas", 8)
+        # Cabeçalho: nome do tipo atual
+        self.type_label = tk.Label(
+            self, text="",
+            font=("Consolas", 14, "bold"),
+            pady=12,
         )
-        hint.pack(side="right")
+        self.type_label.pack(fill="x")
 
-        # ── Seletor de tipo (botões de tecla) ────────────────────────────
-        type_frame = tk.Frame(self, bg=COLORS["bg"], pady=6, padx=12)
-        type_frame.pack(fill="x")
-
-        tk.Label(
-            type_frame, text="Tipo:", bg=COLORS["bg"],
-            fg=COLORS["text_dim"], font=("Consolas", 9)
-        ).pack(side="left", padx=(0, 8))
-
-        self._type_buttons: dict[str, tk.Button] = {}
-        for i, (key, meta) in enumerate(ENTRY_TYPES.items(), start=1):
-            btn = tk.Button(
-                type_frame,
-                text=f"{meta['label']} [{i}]",
-                bg=COLORS["surface"],
-                fg=COLORS["text_dim"],
-                activebackground=meta["color"],
-                relief="flat",
-                bd=0,
-                padx=8, pady=4,
-                font=("Consolas", 8),
-                cursor="hand2",
-                command=lambda k=key: self._select_type(k),
-            )
-            btn.pack(side="left", padx=2)
-            self._type_buttons[key] = btn
-
-        self._select_type(self.selected_type.get())
-
-        # ── Campo título (opcional) ──────────────────────────────────────
-        title_frame = tk.Frame(self, bg=COLORS["bg"], padx=12)
-        title_frame.pack(fill="x", pady=(4, 0))
-
-        self.title_entry = tk.Entry(
-            title_frame,
-            bg=COLORS["surface"], fg=COLORS["text"],
-            insertbackground=COLORS["accent"],
+        # Área de texto principal
+        self.text_widget = tk.Text(
+            self,
+            font=("Consolas", 12),
             relief="flat", bd=0,
-            font=("Consolas", 10),
+            wrap="word", height=5,
+            padx=16, pady=10,
+            bg=TEXT_BG, fg=TEXT_FG,
         )
-        self.title_entry.insert(0, "")
-        self.title_entry.pack(fill="x", ipady=6, padx=1)
-        self._placeholder(self.title_entry, "Título (opcional)...")
+        self.text_widget.pack(fill="both", expand=True, padx=12)
 
-        tk.Frame(title_frame, bg=COLORS["border"], height=1).pack(fill="x")
-
-        # ── Campo conteúdo (principal) ───────────────────────────────────
-        content_frame = tk.Frame(self, bg=COLORS["bg"], padx=12, pady=4)
-        content_frame.pack(fill="both", expand=True)
-
-        self.content_text = tk.Text(
-            content_frame,
-            bg=COLORS["surface"], fg=COLORS["text"],
-            insertbackground=COLORS["accent"],
-            relief="flat", bd=0,
-            font=("Consolas", 10),
-            wrap="word",
-            height=5,
+        # Dica de atalhos
+        self.hint_label = tk.Label(
+            self,
+            text="1:💡  2:⏰  3:📋  4:✅    Enter salva  •  Shift+Enter nova linha  •  Esc cancela",
+            font=("Consolas", 7),
+            pady=7,
         )
-        self.content_text.pack(fill="both", expand=True, ipady=6, padx=1)
+        self.hint_label.pack(fill="x")
 
-        scrollbar = tk.Scrollbar(content_frame, command=self.content_text.yview)
-        self.content_text.configure(yscrollcommand=scrollbar.set)
-
-        tk.Frame(content_frame, bg=COLORS["border"], height=1).pack(fill="x")
-
-        # ── Rodapé: lembrete + botões ────────────────────────────────────
-        footer = tk.Frame(self, bg=COLORS["bg"], padx=12, pady=8)
-        footer.pack(fill="x")
-
-        # Opção de lembrete (só aparece para tipo "reminder")
-        self.reminder_frame = tk.Frame(footer, bg=COLORS["bg"])
-        tk.Label(
-            self.reminder_frame, text="⏰ Em quantos min?",
-            bg=COLORS["bg"], fg=COLORS["text_dim"], font=("Consolas", 8)
-        ).pack(side="left")
-        self.reminder_minutes = tk.Entry(
-            self.reminder_frame, width=5,
-            bg=COLORS["surface"], fg=COLORS["text"],
-            insertbackground=COLORS["accent"],
-            relief="flat", font=("Consolas", 9)
-        )
-        self.reminder_minutes.insert(0, "30")
-        self.reminder_minutes.pack(side="left", padx=4, ipady=3)
-
-        # Botões
-        btn_frame = tk.Frame(footer, bg=COLORS["bg"])
-        btn_frame.pack(side="right")
-
-        tk.Button(
-            btn_frame, text="Cancelar [Esc]",
-            bg=COLORS["surface"], fg=COLORS["text_dim"],
-            relief="flat", bd=0, padx=10, pady=5,
-            font=("Consolas", 9), cursor="hand2",
-            command=self.destroy,
-        ).pack(side="left", padx=4)
-
-        self.save_btn = tk.Button(
-            btn_frame, text="Salvar [Ctrl+↵]",
-            bg=COLORS["accent"], fg=COLORS["bg"],
-            relief="flat", bd=0, padx=10, pady=5,
-            font=("Consolas", 9, "bold"), cursor="hand2",
-            command=self._save,
-        )
-        self.save_btn.pack(side="left")
+    def _apply_type(self, entry_type: str):
+        """Atualiza fundo e label para o tipo selecionado."""
+        cfg = TYPE_CONFIG[entry_type]
+        self._current_type = entry_type
+        self.configure(bg=cfg["bg"])
+        self.type_label.configure(bg=cfg["bg"], fg=cfg["header_fg"], text=cfg["label"])
+        self.text_widget.configure(insertbackground=cfg["cursor"])
+        self.hint_label.configure(bg=cfg["bg"], fg=cfg["header_fg"])
 
     # ------------------------------------------------------------------
-    # Helpers de UI
+    # Modo seleção → modo escrita
     # ------------------------------------------------------------------
 
-    def _placeholder(self, widget: tk.Entry, text: str):
-        """Implementa placeholder text para Entry."""
-        widget.insert(0, text)
-        widget.config(fg=COLORS["text_dim"])
-
-        def on_focus_in(e):
-            if widget.get() == text:
-                widget.delete(0, "end")
-                widget.config(fg=COLORS["text"])
-
-        def on_focus_out(e):
-            if not widget.get():
-                widget.insert(0, text)
-                widget.config(fg=COLORS["text_dim"])
-
-        widget.bind("<FocusIn>", on_focus_in)
-        widget.bind("<FocusOut>", on_focus_out)
-
-    def _select_type(self, entry_type: str):
-        """Atualiza visualmente o botão de tipo selecionado."""
-        self.selected_type.set(entry_type)
-        color = ENTRY_TYPES[entry_type]["color"]
-
-        for key, btn in self._type_buttons.items():
-            if key == entry_type:
-                btn.config(bg=color, fg=COLORS["bg"])
-            else:
-                btn.config(bg=COLORS["surface"], fg=COLORS["text_dim"])
-
-        # Mostra/oculta campo de minutos para lembretes
-        if entry_type == "reminder":
-            self.reminder_frame.pack(side="left")
-        else:
-            self.reminder_frame.pack_forget()
+    def _enter_writing_mode(self, initial_char: str = ""):
+        """
+        Transita para o modo escrita: foca o text widget.
+        Remove os bindings de 1–4 da janela para que possam ser digitados normalmente.
+        """
+        if not self._writing:
+            self._writing = True
+            for i in range(1, 5):
+                self.unbind(f"<Key-{i}>")
+        self.text_widget.focus_set()
+        if initial_char:
+            self.text_widget.insert("end", initial_char)
 
     # ------------------------------------------------------------------
-    # Atalhos de teclado
+    # Atalhos
     # ------------------------------------------------------------------
 
     def _bind_keys(self):
+        # Esc fecha em qualquer estado
         self.bind("<Escape>", lambda e: self.destroy())
-        self.bind("<Control-Return>", lambda e: self._save())
+        self.text_widget.bind("<Escape>", lambda e: self.destroy())
 
-        # Ctrl+1..5 para tipos
-        for i, key in enumerate(TYPE_KEYS, start=1):
-            self.bind(f"<Control-Key-{i}>", lambda e, k=key: self._select_type(k))
+        # Enter no modo seleção: confirma o tipo e entra no modo escrita.
+        # Enter no modo escrita: salva (binding no text_widget tem prioridade).
+        self.bind("<Return>", self._on_window_enter)
+        # Shift+Enter registrado ANTES de <Return> para ter prioridade de matching.
+        self.text_widget.bind("<Shift-Return>", self._on_shift_return)
+        self.text_widget.bind("<Return>", self._on_return)
+
+        # Teclas 1–4: apenas mudam o tipo (ficam em modo seleção para poder trocar)
+        for i, tipo in enumerate(TYPES, start=1):
+            self.bind(f"<Key-{i}>", lambda e, t=tipo: self._on_type_key(t))
+
+        # Qualquer outra tecla printável entra direto no modo escrita
+        self.bind("<KeyPress>", self._on_any_key)
+
+    def _on_type_key(self, entry_type: str):
+        """Muda o tipo visualmente — NÃO entra no modo escrita ainda."""
+        self._apply_type(entry_type)
+        return "break"
+
+    def _on_window_enter(self, event):
+        """Enter no modo seleção confirma o tipo e libera a escrita."""
+        if not self._writing:
+            self._enter_writing_mode()
+        return "break"
+
+    def _on_any_key(self, event):
+        """
+        Tecla printável que não é 1–4: entra no modo escrita com o
+        caractere já inserido (atalho para quem não quer usar o Enter).
+        """
+        if self._writing:
+            return
+        if not event.char or not event.char.isprintable():
+            return
+        if event.char in "1234":
+            return   # Tratado por _on_type_key
+        self._enter_writing_mode(initial_char=event.char)
+        return "break"
+
+    def _on_shift_return(self, event):
+        """Shift+Enter insere nova linha sem salvar."""
+        self.text_widget.insert("insert", "\n")
+        return "break"
+
+    def _on_return(self, event):
+        # Tkinter dispara <Return> mesmo com Shift — ignora se Shift estiver pressionado.
+        if event.state & 0x1:
+            return
+        self._save()
+        return "break"
 
     # ------------------------------------------------------------------
     # Salvar
     # ------------------------------------------------------------------
 
     def _save(self):
-        content = self.content_text.get("1.0", "end").strip()
+        content = self.text_widget.get("1.0", "end").strip()
         if not content:
-            self.content_text.focus_set()
             return
 
-        title_raw = self.title_entry.get().strip()
-        title = "" if title_raw == "Título (opcional)..." else title_raw
+        self.storage.save(Entry(content=content, entry_type=self._current_type))
 
-        entry_type = self.selected_type.get()
-
-        # Configura lembrete se aplicável
-        reminder_at = None
-        reminder_interval = None
-        if entry_type == "reminder":
-            try:
-                mins = int(self.reminder_minutes.get())
-                reminder_at = (datetime.now() + timedelta(minutes=mins)).isoformat()
-                reminder_interval = mins
-            except ValueError:
-                pass
-
-        entry = Entry(
-            content=content,
-            title=title,
-            entry_type=entry_type,
-            reminder_at=reminder_at,
-            reminder_interval_min=reminder_interval,
-        )
-        self.storage.save(entry)
-        self._flash_and_close()
-
-    def _flash_and_close(self):
-        """Feedback visual rápido antes de fechar."""
-        self.save_btn.config(text="✓ Salvo!", bg="#5CE07A")
-        self.after(300, self.destroy)
+        # Feedback visual antes de fechar
+        self.type_label.configure(text="✓  Salvo!")
+        self.after(280, self.destroy)
