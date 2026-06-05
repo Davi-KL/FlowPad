@@ -3,12 +3,14 @@ ui/quick_capture.py
 Janela de captura rápida — minimalista e focada.
 
 Fluxo:
-  1. Abre em modo seleção com fade-in.
-  2. Teclas 1–5 escolhem o tipo (fundo muda de cor).
-  3. Enter (ou qualquer tecla printável) entra no modo escrita.
-  4. Fluxo multi-passo para Lembrete (3 passos) e Nota (2 passos).
-  5. Shift+Enter insere nova linha. Esc fecha sem salvar.
-  6. grab_set() bloqueia outras janelas enquanto aberta.
+  1. Abre em modo seleção: 1–5 trocam o tipo, Enter confirma e abre os campos.
+  2. Qualquer tecla imprimível (exceto 1–5) também confirma e insere o char no 1º campo.
+  3. Tipos de campo único (insight, clipboard, tarefa): Enter salva, Shift+Enter nova linha.
+  4. Lembrete: 3 campos simultâneos (texto, hora HH:MM com máscara, data DD/MM com máscara).
+     Tab ou Enter avança entre campos; Ctrl+Enter salva de qualquer campo.
+  5. Nota: título (Entry) + conteúdo (Text). Enter no título move ao conteúdo.
+     Ctrl+Enter salva de qualquer campo.
+  6. Esc fecha sem salvar. grab_set() bloqueia outras janelas.
 """
 
 import tkinter as tk
@@ -21,9 +23,6 @@ from utils.config import Config
 from ui.colors import TYPE_BG, TYPE_FG
 
 
-# ──────────────────────────────────────────────────────────────────────
-# Configuração visual e passos por tipo
-# ──────────────────────────────────────────────────────────────────────
 TYPE_CONFIG = {
     "insight":   {"label": "💡  INSIGHT",   "cursor": "#C9A020"},
     "reminder":  {"label": "⏰  LEMBRETE",  "cursor": "#B03840"},
@@ -33,24 +32,12 @@ TYPE_CONFIG = {
 }
 
 TYPES = list(TYPE_CONFIG.keys())
-
-STEPS: dict[str, list[tuple[str, str]]] = {
-    "insight":   [("content", "Escreva seu insight...")],
-    "reminder":  [
-        ("content", "Qual é o lembrete?"),
-        ("time",    "Horário?  (HH:MM — ex: 14:30)"),
-        ("date",    "Data?  (DD/MM — Enter = hoje)"),
-    ],
-    "clipboard": [("content", "Cole ou escreva o conteúdo...")],
-    "task":      [("content", "O que precisa ser feito?")],
-    "note":      [
-        ("title",   "Título da nota:"),
-        ("content", "Conteúdo da nota..."),
-    ],
-}
+SINGLE_TYPES = {"insight", "clipboard", "task"}
 
 TEXT_BG = "#FAFAFA"
 TEXT_FG = "#1A1A2E"
+ENTRY_FONT = ("Consolas", 11)
+LABEL_FONT = ("Consolas", 8)
 
 
 class QuickCaptureWindow(ctk.CTkToplevel):
@@ -70,16 +57,13 @@ class QuickCaptureWindow(ctk.CTkToplevel):
         self.storage = storage
         self.config = config
         self._current_type = default_type if default_type in TYPE_CONFIG else "insight"
-        self._writing = False
-        self._step = 0
-        self._step_data: dict[str, str] = {}
+        self._editing = False   # False = modo seleção, True = campos visíveis
 
         self._configure_window()
-        self._build_ui()
+        self._build_static_ui()
         self._apply_type(self._current_type)
-        self._bind_keys()
+        self._bind_global_keys()
         self._center()
-
         self.after(50, self._activate)
 
     # ------------------------------------------------------------------
@@ -87,7 +71,6 @@ class QuickCaptureWindow(ctk.CTkToplevel):
     # ------------------------------------------------------------------
 
     def _activate(self):
-        """Força foco e modal; inicia o fade-in."""
         self.lift()
         self.focus_force()
         self.grab_set()
@@ -101,10 +84,10 @@ class QuickCaptureWindow(ctk.CTkToplevel):
 
     def _configure_window(self):
         self.title("FlowPad")
-        self.geometry("440x250")
+        self.geometry("460x300")
         self.resizable(False, False)
         self.attributes("-topmost", True)
-        self.attributes("-alpha", 0.0)  # Começa transparente para o fade-in
+        self.attributes("-alpha", 0.0)
 
     def _center(self):
         self.update_idletasks()
@@ -115,173 +98,336 @@ class QuickCaptureWindow(ctk.CTkToplevel):
         self.geometry(f"+{x}+{y}")
 
     # ------------------------------------------------------------------
-    # UI — usa widgets tk nativos para controle preciso de teclado
+    # Estrutura estática da UI
     # ------------------------------------------------------------------
 
-    def _build_ui(self):
+    def _build_static_ui(self):
         self.type_label = tk.Label(
             self, text="",
-            font=("Consolas", 14, "bold"),
-            pady=8,
+            font=("Consolas", 14, "bold"), pady=8,
         )
         self.type_label.pack(fill="x")
 
-        self.prompt_label = tk.Label(
-            self, text="",
-            font=("Consolas", 9),
-            pady=0,
-        )
-        self.prompt_label.pack(fill="x")
-
-        self.text_widget = tk.Text(
-            self,
-            font=("Consolas", 12),
-            relief="flat", bd=0,
-            wrap="word", height=5,
-            padx=16, pady=8,
-            bg=TEXT_BG, fg=TEXT_FG,
-        )
-        self.text_widget.pack(fill="both", expand=True, padx=12)
+        # Área de conteúdo dinâmico — reconstruída ao trocar de tipo
+        self._content_area = tk.Frame(self)
+        self._content_area.pack(fill="both", expand=True, padx=14)
 
         self.hint_label = tk.Label(
-            self,
-            text="1:💡  2:⏰  3:📋  4:✅  5:📝    Enter seleciona  •  Esc cancela",
-            font=("Consolas", 7),
-            pady=6,
+            self, text="", font=("Consolas", 7), pady=6,
         )
         self.hint_label.pack(fill="x")
+
+    # ------------------------------------------------------------------
+    # Troca de tipo — reconstrói os campos
+    # ------------------------------------------------------------------
 
     def _apply_type(self, entry_type: str):
         cfg = TYPE_CONFIG[entry_type]
         bg  = TYPE_BG[entry_type]
         fg  = TYPE_FG[entry_type]
         self._current_type = entry_type
+
         self.configure(fg_color=bg)
         self.type_label.configure(bg=bg, fg=fg, text=cfg["label"])
-        self.prompt_label.configure(bg=bg, fg=fg, text="")
-        self.text_widget.configure(insertbackground=cfg["cursor"])
+        self._content_area.configure(bg=bg)
         self.hint_label.configure(bg=bg, fg=fg)
 
-    def _update_prompt(self):
-        steps = STEPS[self._current_type]
-        total = len(steps)
-        _, prompt_text = steps[self._step]
-        step_info = f"  [{self._step + 1}/{total}]" if total > 1 else ""
-        self.prompt_label.configure(text=f"  {prompt_text}{step_info}")
+        if self._editing:
+            self._build_fields()
+        else:
+            # Modo seleção: mostra só o placeholder
+            for w in self._content_area.winfo_children():
+                w.destroy()
+            tk.Label(
+                self._content_area,
+                text="pressione Enter para começar",
+                font=("Consolas", 9), bg=bg, fg=fg,
+            ).pack(expand=True)
+            self.hint_label.configure(
+                text="1:💡  2:⏰  3:📋  4:✅  5:📝    Enter confirma  •  Esc cancela"
+            )
 
-        action = "salvar" if self._step == total - 1 else "avançar"
-        self.hint_label.configure(
-            text=f"Enter {action}  •  Shift+Enter nova linha  •  Esc cancela"
-        )
+    def _enter_edit_mode(self, initial_char: str = ""):
+        """Confirma o tipo e exibe os campos de entrada."""
+        if self._editing:
+            return
+        self._editing = True
+        self._build_fields()
 
-    # ------------------------------------------------------------------
-    # Modo seleção → modo escrita
-    # ------------------------------------------------------------------
-
-    def _enter_writing_mode(self, initial_char: str = ""):
-        if not self._writing:
-            self._writing = True
-            self._step = 0
-            self._step_data = {}
-            for i in range(1, 6):
-                self.unbind(f"<Key-{i}>")
-            self._update_prompt()
-        self.text_widget.focus_set()
+        # Insere o caractere inicial no primeiro campo, se houver
         if initial_char:
-            self.text_widget.insert("end", initial_char)
+            if self._current_type in SINGLE_TYPES:
+                try: self.text_widget.insert("end", initial_char)
+                except AttributeError: pass
+            elif self._current_type == "reminder":
+                try: self.rem_content.insert("end", initial_char)
+                except AttributeError: pass
+            elif self._current_type == "note":
+                try: self.note_title.insert("end", initial_char)
+                except AttributeError: pass
+
+    def _build_fields(self):
+        """Reconstrói os campos na content_area para o tipo atual."""
+        for w in self._content_area.winfo_children():
+            w.destroy()
+
+        bg     = TYPE_BG[self._current_type]
+        fg     = TYPE_FG[self._current_type]
+        cursor = TYPE_CONFIG[self._current_type]["cursor"]
+
+        if self._current_type == "reminder":
+            self._build_reminder_fields(bg, fg, cursor)
+            self.hint_label.configure(
+                text="Tab/Enter avança entre campos  •  Ctrl+Enter salva  •  Esc cancela"
+            )
+        elif self._current_type == "note":
+            self._build_note_fields(bg, fg, cursor)
+            self.hint_label.configure(
+                text="Enter no título vai ao conteúdo  •  Ctrl+Enter salva  •  Esc cancela"
+            )
+        else:
+            self._build_single_field(bg, fg, cursor)
+            self.hint_label.configure(
+                text="Enter salva  •  Shift+Enter nova linha  •  Esc cancela"
+            )
 
     # ------------------------------------------------------------------
-    # Atalhos
+    # Layouts por tipo
     # ------------------------------------------------------------------
 
-    def _bind_keys(self):
-        self.bind("<Escape>", lambda e: self.destroy())
-        self.text_widget.bind("<Escape>", lambda e: self.destroy())
-
-        self.bind("<Return>", self._on_window_enter)
+    def _build_single_field(self, bg: str, fg: str, cursor: str):
+        self.text_widget = tk.Text(
+            self._content_area,
+            font=("Consolas", 12), relief="flat", bd=0,
+            wrap="word", height=5, padx=16, pady=8,
+            bg=TEXT_BG, fg=TEXT_FG, insertbackground=cursor,
+        )
+        self.text_widget.pack(fill="both", expand=True)
+        self.text_widget.focus_set()
+        self.text_widget.bind("<Escape>",      lambda e: self.destroy())
         self.text_widget.bind("<Shift-Return>", self._on_shift_return)
-        self.text_widget.bind("<Return>", self._on_return)
+        self.text_widget.bind("<Return>",       self._on_single_return)
 
-        for i, tipo in enumerate(TYPES, start=1):
-            self.bind(f"<Key-{i}>", lambda e, t=tipo: self._on_type_key(t))
+    def _build_reminder_fields(self, bg: str, fg: str, cursor: str):
+        # Campo: texto do lembrete
+        tk.Label(
+            self._content_area, text="  Lembrete",
+            font=LABEL_FONT, bg=bg, fg=fg, anchor="w",
+        ).pack(fill="x")
 
-        self.bind("<KeyPress>", self._on_any_key)
+        self.rem_content = tk.Entry(
+            self._content_area,
+            font=ENTRY_FONT, relief="flat", bd=0,
+            bg=TEXT_BG, fg=TEXT_FG, insertbackground=cursor,
+        )
+        self.rem_content.pack(fill="x", ipady=7, pady=(0, 10))
+        self.rem_content.focus_set()
+        self.rem_content.bind("<Return>",         lambda e: (self.rem_time.focus_set(), "break")[1])
+        self.rem_content.bind("<Escape>",         lambda e: self.destroy())
+        self.rem_content.bind("<Control-Return>", lambda e: self._save())
 
-    def _on_type_key(self, entry_type: str):
-        self._apply_type(entry_type)
+        # Linha: Horário + Data lado a lado
+        row = tk.Frame(self._content_area, bg=bg)
+        row.pack(fill="x")
+
+        # Horário
+        time_col = tk.Frame(row, bg=bg)
+        time_col.pack(side="left", fill="x", expand=True, padx=(0, 10))
+
+        tk.Label(
+            time_col, text="  Horário  (HH:MM)",
+            font=LABEL_FONT, bg=bg, fg=fg, anchor="w",
+        ).pack(fill="x")
+
+        self.rem_time = tk.Entry(
+            time_col,
+            font=("Consolas", 13), relief="flat", bd=0,
+            bg=TEXT_BG, fg=TEXT_FG, insertbackground=cursor,
+        )
+        self.rem_time.pack(fill="x", ipady=7)
+        self.rem_time.bind("<KeyPress>",       lambda e: self._masked_keypress(e, self.rem_time, ":", self.rem_date))
+        self.rem_time.bind("<Return>",         lambda e: (self.rem_date.focus_set(), "break")[1])
+        self.rem_time.bind("<Escape>",         lambda e: self.destroy())
+        self.rem_time.bind("<Control-Return>", lambda e: self._save())
+
+        # Data
+        date_col = tk.Frame(row, bg=bg)
+        date_col.pack(side="left", fill="x", expand=True)
+
+        tk.Label(
+            date_col, text="  Data  (DD/MM — vazio = hoje)",
+            font=LABEL_FONT, bg=bg, fg=fg, anchor="w",
+        ).pack(fill="x")
+
+        self.rem_date = tk.Entry(
+            date_col,
+            font=("Consolas", 13), relief="flat", bd=0,
+            bg=TEXT_BG, fg=TEXT_FG, insertbackground=cursor,
+        )
+        self.rem_date.pack(fill="x", ipady=7)
+        self.rem_date.bind("<KeyPress>",       lambda e: self._masked_keypress(e, self.rem_date, "/", None))
+        self.rem_date.bind("<Return>",         lambda e: self._save())
+        self.rem_date.bind("<Escape>",         lambda e: self.destroy())
+        self.rem_date.bind("<Control-Return>", lambda e: self._save())
+
+    def _build_note_fields(self, bg: str, fg: str, cursor: str):
+        # Título
+        tk.Label(
+            self._content_area, text="  Título",
+            font=LABEL_FONT, bg=bg, fg=fg, anchor="w",
+        ).pack(fill="x")
+
+        self.note_title = tk.Entry(
+            self._content_area,
+            font=ENTRY_FONT, relief="flat", bd=0,
+            bg=TEXT_BG, fg=TEXT_FG, insertbackground=cursor,
+        )
+        self.note_title.pack(fill="x", ipady=7, pady=(0, 8))
+        self.note_title.focus_set()
+        self.note_title.bind("<Return>",         lambda e: (self.note_content.focus_set(), "break")[1])
+        self.note_title.bind("<Escape>",         lambda e: self.destroy())
+        self.note_title.bind("<Control-Return>", lambda e: self._save())
+
+        # Conteúdo
+        tk.Label(
+            self._content_area, text="  Conteúdo",
+            font=LABEL_FONT, bg=bg, fg=fg, anchor="w",
+        ).pack(fill="x")
+
+        self.note_content = tk.Text(
+            self._content_area,
+            font=("Consolas", 11), relief="flat", bd=0,
+            wrap="word", height=4, padx=8, pady=6,
+            bg=TEXT_BG, fg=TEXT_FG, insertbackground=cursor,
+        )
+        self.note_content.pack(fill="both", expand=True)
+        self.note_content.bind("<Escape>",         lambda e: self.destroy())
+        self.note_content.bind("<Control-Return>", lambda e: self._save())
+
+    # ------------------------------------------------------------------
+    # Máscara para horário e data
+    # ------------------------------------------------------------------
+
+    def _masked_keypress(self, event, entry: tk.Entry, sep: str, next_widget) -> str:
+        sym = event.keysym
+
+        # Deixa Tab, Esc e Ctrl+qualquer coisa passarem normalmente
+        if sym in ("Tab", "Escape") or (event.state & 0x4):
+            return
+
+        if sym == "BackSpace":
+            current = entry.get()
+            if current:
+                # Se o último char é o separador, remove os dois últimos
+                if current.endswith(sep):
+                    entry.delete(len(current) - 1, "end")
+                else:
+                    entry.delete(len(current) - 1, "end")
+            return "break"
+
+        char = event.char
+        if not char or not char.isdigit():
+            return "break"
+
+        current = entry.get()
+        digits  = current.replace(sep, "")
+
+        if len(digits) >= 4:
+            return "break"
+
+        # Após 2 dígitos, insere o separador automaticamente
+        if len(digits) == 2:
+            entry.insert("end", sep + char)
+        else:
+            entry.insert("end", char)
+
+        # Avança ao próximo campo após preencher os 4 dígitos
+        if len(entry.get().replace(sep, "")) == 4 and next_widget:
+            next_widget.focus_set()
+
         return "break"
 
+    # ------------------------------------------------------------------
+    # Atalhos globais da janela
+    # ------------------------------------------------------------------
+
+    def _bind_global_keys(self):
+        self.bind("<Escape>",         lambda e: self.destroy())
+        self.bind("<Return>",         self._on_window_enter)
+        self.bind("<Control-Return>", lambda e: self._save())
+        self.bind("<KeyPress>",       self._on_any_key)
+
+        for i, tipo in enumerate(TYPES, start=1):
+            self.bind(
+                f"<Key-{i}>",
+                lambda e, t=tipo: self._apply_type(t)
+                if not isinstance(e.widget, (tk.Entry, tk.Text))
+                else None,
+            )
+
     def _on_window_enter(self, event):
-        if not self._writing:
-            self._enter_writing_mode()
+        """Enter em modo seleção confirma o tipo; no modo edição, os campos tratam o evento."""
+        if not self._editing:
+            self._enter_edit_mode()
         return "break"
 
     def _on_any_key(self, event):
-        if self._writing:
+        """Qualquer tecla imprimível (exceto 1–5) em modo seleção entra no modo edição."""
+        if self._editing:
             return
-        if not event.char or not event.char.isprintable():
+        char = event.char
+        if not char or not char.isprintable():
             return
-        if event.char in "12345":
+        if char in "12345":
             return
-        self._enter_writing_mode(initial_char=event.char)
+        self._enter_edit_mode(initial_char=char)
+        return "break"
+
+    # ------------------------------------------------------------------
+    # Handlers de tecla para campo único
+    # ------------------------------------------------------------------
+
+    def _on_single_return(self, event):
+        if event.state & 0x1:   # Shift+Enter → nova linha (handled by _on_shift_return)
+            return
+        self._save()
         return "break"
 
     def _on_shift_return(self, event):
         self.text_widget.insert("insert", "\n")
         return "break"
 
-    def _on_return(self, event):
-        if event.state & 0x1:
-            return
-        self._advance_step()
-        return "break"
-
     # ------------------------------------------------------------------
-    # Lógica de passos
+    # Salvar
     # ------------------------------------------------------------------
-
-    def _advance_step(self):
-        steps = STEPS[self._current_type]
-        current_key = steps[self._step][0]
-        value = self.text_widget.get("1.0", "end").strip()
-
-        if not value and current_key != "date":
-            return
-
-        self._step_data[current_key] = value
-        self._step += 1
-
-        if self._step < len(steps):
-            self.text_widget.delete("1.0", "end")
-            self._update_prompt()
-        else:
-            self._save()
 
     def _save(self):
-        data = self._step_data
         entry_type = self._current_type
 
         if entry_type == "reminder":
+            content = self.rem_content.get().strip()
+            if not content:
+                self.rem_content.focus_set()
+                return
             reminder_at = self._build_reminder_at(
-                data.get("time", ""),
-                data.get("date", ""),
+                self.rem_time.get().strip(),
+                self.rem_date.get().strip(),
             )
-            entry = Entry(
-                content=data.get("content", ""),
-                entry_type="reminder",
-                reminder_at=reminder_at,
-            )
+            entry = Entry(content=content, entry_type="reminder", reminder_at=reminder_at)
+
         elif entry_type == "note":
-            entry = Entry(
-                content=data.get("content", ""),
-                entry_type="note",
-                title=data.get("title", ""),
-            )
+            title   = self.note_title.get().strip()
+            content = self.note_content.get("1.0", "end").strip()
+            if not title and not content:
+                self.note_title.focus_set()
+                return
+            entry = Entry(content=content, entry_type="note", title=title)
+
         else:
-            entry = Entry(
-                content=data.get("content", ""),
-                entry_type=entry_type,
-            )
+            content = self.text_widget.get("1.0", "end").strip()
+            if not content:
+                return
+            entry = Entry(content=content, entry_type=entry_type)
 
         self.storage.save(entry)
         self.type_label.configure(text="✓  Salvo!")
@@ -290,15 +436,15 @@ class QuickCaptureWindow(ctk.CTkToplevel):
     @staticmethod
     def _build_reminder_at(time_str: str, date_str: str) -> str | None:
         try:
-            parts = time_str.strip().split(":")
-            h, m = int(parts[0]), int(parts[1])
+            digits = time_str.replace(":", "").strip()
+            h, m   = int(digits[:2]), int(digits[2:4])
             if date_str.strip():
-                d_parts = date_str.strip().split("/")
-                d, mo = int(d_parts[0]), int(d_parts[1])
+                ddigits = date_str.replace("/", "").strip()
+                d, mo   = int(ddigits[:2]), int(ddigits[2:4])
                 dt = datetime(datetime.now().year, mo, d, h, m)
             else:
                 today = date_type.today()
-                dt = datetime(today.year, today.month, today.day, h, m)
+                dt    = datetime(today.year, today.month, today.day, h, m)
             return dt.isoformat()
         except (ValueError, IndexError):
             return None
