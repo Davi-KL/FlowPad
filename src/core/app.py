@@ -9,8 +9,9 @@ import tkinter as tk
 from tkinter import messagebox
 import customtkinter as ctk
 
-from core.storage import Storage
+from core.storage import Storage, register_extra_types
 from core.hotkey_manager import HotkeyManager
+from core.plugin_manager import PluginManager
 from core.reminder_scheduler import ReminderScheduler
 from ui.tray_icon import TrayIcon
 from ui.quick_capture import QuickCaptureWindow
@@ -44,6 +45,8 @@ class FlowPadApp:
         self._setup_tray()
         self._register_hotkeys()
         self.reminder_scheduler.start()
+        self._load_plugins()
+        self._start_clipboard_monitor()
 
     # ------------------------------------------------------------------
     # Setup
@@ -61,13 +64,23 @@ class FlowPadApp:
     def _register_hotkeys(self):
         """Registra os atalhos globais conforme configuração do usuário."""
         hotkeys = self.config.get("hotkeys", {})
-        capture_key = hotkeys.get("quick_capture", "ctrl+shift+space")
-        dashboard_key = hotkeys.get("dashboard", "ctrl+shift+f")
-        clipboard_key = hotkeys.get("clipboard_capture", "ctrl+shift+c")
+        capture_key   = hotkeys.get("quick_capture",          "ctrl+shift+space")
+        dashboard_key = hotkeys.get("dashboard",              "ctrl+shift+f")
+        reminder_key  = hotkeys.get("quick_capture_reminder", "ctrl+alt+r")
 
-        self.hotkey_manager.register(capture_key, self._on_hotkey_capture)
+        self.hotkey_manager.register(capture_key,   self._on_hotkey_capture)
         self.hotkey_manager.register(dashboard_key, self._on_hotkey_dashboard)
-        self.hotkey_manager.register(clipboard_key, self._on_hotkey_clipboard)
+        self.hotkey_manager.register(reminder_key,  self._on_hotkey_type_reminder)
+
+    def _load_plugins(self):
+        """Carrega plugins de src/plugins/ e registra tipos/hotkeys extras."""
+        from pathlib import Path
+        plugin_dir = Path(__file__).parent.parent / "plugins"
+        self.plugin_manager = PluginManager()
+        self.plugin_manager.load_plugins(str(plugin_dir), self)
+        extra = self.plugin_manager.get_extra_types()
+        if extra:
+            register_extra_types(extra)
 
     # ------------------------------------------------------------------
     # Hotkey callbacks (chamados de thread separada — usa `after` p/ thread safety)
@@ -79,8 +92,8 @@ class FlowPadApp:
     def _on_hotkey_dashboard(self):
         self.root.after(0, self.open_dashboard)
 
-    def _on_hotkey_clipboard(self):
-        self.root.after(0, self._capture_clipboard)
+    def _on_hotkey_type_reminder(self):
+        self.root.after(0, lambda: self.open_quick_capture("reminder", start_editing=True))
 
     def _open_settings_from_tray(self):
         """Wrapper com after() para chamar de dentro da thread do pystray com segurança."""
@@ -90,35 +103,28 @@ class FlowPadApp:
     # Ações públicas
     # ------------------------------------------------------------------
 
-    def _capture_clipboard(self):
-        """Lê a área de transferência e salva como entrada do tipo clipboard."""
+    def _start_clipboard_monitor(self):
+        """Inicializa o monitor de clipboard com o conteúdo atual como baseline."""
         try:
-            content = self.root.clipboard_get()
+            self._last_clipboard = self.root.clipboard_get()
         except tk.TclError:
-            return
-        if not content.strip():
-            return
-        from core.storage import Entry
-        self.storage.save(Entry(content=content, entry_type="clipboard"))
-        self._show_clipboard_toast()
+            self._last_clipboard = ""
+        self._poll_clipboard()
 
-    def _show_clipboard_toast(self):
-        """Exibe uma notificação temporária confirmando a captura do clipboard."""
-        toast = tk.Toplevel(self.root)
-        toast.overrideredirect(True)
-        toast.attributes("-topmost", True)
-        sw = self.root.winfo_screenwidth()
-        sh = self.root.winfo_screenheight()
-        toast.geometry(f"260x46+{sw - 280}+{sh - 80}")
-        toast.configure(bg="#5CB8E0")
-        tk.Label(
-            toast, text="📋  Clipboard capturado!",
-            bg="#5CB8E0", fg="#1A1A2E",
-            font=("Consolas", 10, "bold")
-        ).pack(expand=True)
-        toast.after(1400, toast.destroy)
+    def _poll_clipboard(self):
+        """Verifica mudanças no clipboard a cada 1s e salva automaticamente."""
+        try:
+            current = self.root.clipboard_get()
+            if current != self._last_clipboard:
+                if current.strip() and self.config.get("clipboard_monitor", True):
+                    from core.storage import Entry
+                    self.storage.save(Entry(content=current, entry_type="clipboard"))
+                self._last_clipboard = current
+        except tk.TclError:
+            pass  # clipboard vazio ou conteúdo não-texto (imagem, arquivo)
+        self.root.after(1000, self._poll_clipboard)
 
-    def open_quick_capture(self, entry_type: str = "insight"):
+    def open_quick_capture(self, entry_type: str = "insight", start_editing: bool = False):
         """Abre (ou foca) a janela de captura rápida."""
         if self._capture_window is None or not self._capture_window.winfo_exists():
             self._capture_window = QuickCaptureWindow(
@@ -126,6 +132,7 @@ class FlowPadApp:
                 storage=self.storage,
                 config=self.config,
                 default_type=entry_type,
+                start_editing=start_editing,
             )
         else:
             self._capture_window.lift()

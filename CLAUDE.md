@@ -33,7 +33,7 @@ flowpad/
 │   │   ├── dashboard.py         # Hub de abas (orquestra as 5 visões)
 │   │   ├── view_insights.py     # Aba: cards de insights FILO
 │   │   ├── view_reminders.py    # Aba: lembretes por proximidade
-│   │   ├── view_clipboard.py    # Aba: clipboard FILO + Ctrl+Shift+C
+│   │   ├── view_clipboard.py    # Aba: clipboard FILO + Ctrl+Alt+C
 │   │   ├── view_tasks.py        # Aba: to-do com toggle de conclusão
 │   │   └── view_notes.py        # Aba: lista de títulos + painel de conteúdo
 │   └── utils/
@@ -103,6 +103,9 @@ Escolha intencional para o MVP:
 |---|---|
 | `Ctrl + Shift + Space` | Abre janela de captura rápida |
 | `Ctrl + Shift + F` | Abre o dashboard |
+| `Ctrl + Alt + R` | Abre captura rápida já no modo Lembrete |
+
+> **Nota:** O clipboard **não tem mais atalho** — o app monitora automaticamente qualquer `Ctrl+C` e salva no histórico (comportamento configurável em Configurações). `Ctrl+Alt` foi escolhido para o Lembrete Direto para evitar conflito com o Chrome (`Ctrl+Shift+R` = hard reload). O pynput não suprime eventos. Todos os atalhos são configuráveis em Configurações.
 
 ### Na janela de captura rápida
 
@@ -135,11 +138,13 @@ Escolha intencional para o MVP:
 | `Space` | Marcar / desmarcar tarefa |
 | `C` | Copiar item selecionado |
 | `A` | Arquivar item selecionado |
+| `E` | Editar item selecionado inline |
 | `Delete` | Deletar item selecionado |
 | `N` | Nova captura no tipo atual |
 | `F5` | Atualizar lista |
+| `Ctrl+F` | Focar campo de busca |
 | `1` / `2` / `3` | Filtrar tarefas: Todas / Pendentes / Concluídas |
-| `Escape` | Voltar ao menu principal |
+| `Escape` | Limpar busca (se busca ativa) ou voltar ao menu |
 
 ---
 
@@ -196,6 +201,29 @@ pyinstaller flowpad.spec
 ---
 
 ## 📋 Roadmap de Sprints
+
+### ✅ Sprint 5 — Recursos Avançados (concluída)
+
+**Objetivo:** Funcionalidades para power users: atalhos diretos por tipo, busca fuzzy nas visões, edição inline, pasta de dados customizável e base extensível por plugins.
+
+**O que foi entregue:**
+- [x] **[FEAT] Atalho `Ctrl+Shift+R`** — abre quick_capture já em modo Lembrete (campos visíveis imediatamente, sem etapa de seleção de tipo); parâmetro `start_editing: bool` adicionado ao `QuickCaptureWindow`
+- [x] **[FEAT] Busca fuzzy nas 5 visões** — campo `🔍 Buscar...` em cada visão; filtra em tempo real com tolerância a erros de digitação; `Ctrl+F` foca o campo; `Escape` limpa a busca
+- [x] **[FEAT] Edição inline no dashboard** — tecla `E` (ou botão "✏ Editar") abre editor no próprio card sem nova janela; `Ctrl+Enter` salva, `Escape` cancela; Notas editam título + conteúdo no painel direito
+- [x] **[FEAT] Sincronização via arquivo** — pasta de dados customizável nas configurações (OneDrive, Dropbox, etc.); requer reinício para aplicar
+- [x] **[FEAT] Plugin system (base)** — `PluginManager` carrega `.py` de `src/plugins/` na inicialização; cada plugin expõe `register(app) -> dict` com `types` e `hotkeys`; `example_plugin.py` demonstra tipo "🔖 Favorito"
+- [x] **[REFACTOR] Settings** — adicionado campo para hotkey do Lembrete Direto; corrigido bug onde `clipboard_capture` era apagado ao salvar; nova seção "Dados & Sincronização"
+- [x] **[TEST] `tests/test_utils.py`** — 8 testes para `fuzzy_match`; **`tests/test_storage.py`** — 4 testes para `update_entry`
+
+**Decisões técnicas desta sprint:**
+- `fuzzy_match` combina três estratégias: substring exata → similaridade palavra-a-palavra (ratio > 0.7, boa para typos) → similaridade global (ratio > 0.6); sem nova dependência (`difflib` é built-in)
+- Guard `_is_text_focused()` no dashboard — `isinstance(focus_get(), (tk.Entry, tk.Text))` antes de disparar shortcuts de letras; evita conflito com campo de busca; `↑↓` e `Escape` são exceções deliberadas
+- Pasta de dados: `Config.__init__` lê `custom_data_dir` e ajusta `data_path` diretamente; sem alteração em `app.py`; troca requer reinício para evitar propagação de novo `Storage` para janelas abertas
+- Plugin system: módulos em `src/plugins/` com função `register(app)`; `register_extra_types()` em `storage.py` atualiza `ENTRY_TYPES` globalmente; hotkeys de plugins registrados direto no `HotkeyManager`
+- `_filtered: list[Entry]` adicionado a todas as views — `_nav()`, `select_first()` e `_get_selected()` operam sobre a lista filtrada; busca e filtros de tipo/status são compostos em `_apply_filter()`
+- `NotesView._edit_selected()` converte o painel direito inteiro em editor (título + conteúdo), aproveitando a largura disponível em vez de editar inline na lista estreita (240px)
+
+---
 
 ### ✅ Sprint 4 — UX Polish & Navegação por Teclado (concluída)
 
@@ -313,28 +341,36 @@ pyinstaller flowpad.spec
 
 ---
 
+### ✅ v0.7 — Monitoramento de Clipboard e Correções (concluída)
+
+**Objetivo:** Resolver conflitos de hotkeys com Chrome/Windows e tornar a captura de clipboard fluida e automática.
+
+**O que foi entregue:**
+- [x] **[FEAT] Monitoramento automático de clipboard** — polling de 1s via `root.after()`; qualquer `Ctrl+C` salva automaticamente no histórico sem precisar de hotkey manual; sem nova dependência
+- [x] **[FEAT] Toggle nas configurações** — "Monitorar clipboard automaticamente" com efeito imediato no próximo ciclo (sem reiniciar)
+- [x] **[FEAT] Migração de dados ao trocar pasta** — `shutil.copy2` com diálogo de confirmação; trata conflito quando destino já tem `entries.json`
+- [x] **[FEAT] Botão "Restaurar padrões"** na seção de hotkeys das configurações
+- [x] **[FIX] Hotkeys conflitantes com Chrome** — `Ctrl+Shift+C` (DevTools) e `Ctrl+Shift+R` (hard-reload) migrados para `Ctrl+Alt+C` e `Ctrl+Alt+R`; migração automática e silenciosa no `config.json` na primeira execução
+
+**Decisões técnicas:**
+- Polling via `root.after(1000, _poll_clipboard)` em vez de interceptar `Ctrl+C` — captura qualquer forma de cópia (menu, drag, programas externos), não só teclas; sem nova dependência
+- `_last_clipboard` atualizado mesmo quando monitoramento está desligado — ao religar, só novos copies são salvos, não conteúdo que já estava no clipboard
+- `TclError` silenciado no poll — trata clipboard com imagens, arquivos ou vazio sem travar o loop
+- Migração de hotkeys em `Config._migrate_hotkeys()`: só substitui o valor se for exatamente o antigo padrão; valores customizados pelo usuário são preservados
+- `Ctrl+Alt` escolhido por não conflitar com Chrome, Windows nem teclados ABNT (AltGr = Ctrl+Alt afeta caracteres especiais em teclados europeus, mas não no padrão BR)
+
 ---
 
-### 🔮 Sprint 2 — Polish Visual
+### 🔮 Sprint 6 — Próxima Sprint
 
-**Objetivo:** Migrar para CustomTkinter, adicionar temas, melhorar animações.
+**Objetivo:** A definir com base nos feedbacks das versões anteriores.
 
-- [ ] **[REFACTOR] Migrar para CustomTkinter** — Widgets modernos mantendo toda a lógica atual
-- [ ] **[FEAT] Múltiplos temas** — Dark, Light, Dracula, Solarized
-- [ ] **[FEAT] Animação de abertura** — Fade-in na janela de captura rápida
-- [ ] **[FEAT] Histórico de clipboard** — Ver as últimas N entradas do tipo clipboard numa floating window
-
----
-
-### 🔮 Sprint 3 — Recursos Avançados
-
-**Objetivo:** Funcionalidades para usuários avançados e power users.
-
-- [ ] **[FEAT] Modo de edição inline no dashboard** — Editar entrada sem abrir nova janela
-- [ ] **[FEAT] Atalho para tipos específicos** — `Ctrl+Shift+R` abre captura já no modo Reminder
-- [ ] **[FEAT] Busca fuzzy** — Busca tolerante a erros de digitação
-- [ ] **[FEAT] Sincronização via arquivo** — Opção de salvar em pasta do OneDrive/Dropbox
-- [ ] **[FEAT] Plugin system** — API para contribuidores adicionarem tipos customizados
+Sugestões:
+- [ ] **[FEAT] UI de gerenciamento de plugins** — listar plugins carregados, ativar/desativar sem reiniciar
+- [ ] **[FEAT] Múltiplos temas visuais** — Dracula, Solarized, além de Dark/Light
+- [ ] **[FEAT] Exportação por tipo** — exportar apenas uma categoria de entradas
+- [ ] **[FEAT] Busca global** — campo de busca no menu principal do dashboard (atravessa todos os tipos)
+- [ ] **[FEAT] Limite e deduplicação no histórico de clipboard** — não salvar itens duplicados consecutivos; limitar histórico por tamanho máximo configurável
 
 ---
 
@@ -457,5 +493,5 @@ pyinstaller flowpad.spec
 
 ---
 
-*Última atualização: Sprint 4 — UX Polish & Navegação por Teclado*
-*Próxima atualização prevista: ao finalizar Sprint 5 (Recursos Avançados)*
+*Última atualização: v0.7 — Monitoramento de Clipboard e Correções (2026-06-05)*
+*Próxima atualização prevista: ao finalizar Sprint 6*
