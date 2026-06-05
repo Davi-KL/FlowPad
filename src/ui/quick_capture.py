@@ -3,60 +3,37 @@ ui/quick_capture.py
 Janela de captura rápida — minimalista e focada.
 
 Fluxo:
-  1. Abre em modo seleção (janela com foco, área de texto vazia).
-  2. Teclas 1–5 escolhem o tipo sem entrar no modo escrita.
+  1. Abre em modo seleção com fade-in.
+  2. Teclas 1–5 escolhem o tipo (fundo muda de cor).
   3. Enter (ou qualquer tecla printável) entra no modo escrita.
-  4. Tipos de fluxo único (insight, clipboard, task): Enter salva.
-  5. Tipos multi-passo (reminder 3 passos, note 2 passos): Enter avança ao próximo passo.
-  6. Shift+Enter insere nova linha. Esc fecha sem salvar.
-  7. grab_set() bloqueia qualquer outra janela enquanto esta estiver aberta.
+  4. Fluxo multi-passo para Lembrete (3 passos) e Nota (2 passos).
+  5. Shift+Enter insere nova linha. Esc fecha sem salvar.
+  6. grab_set() bloqueia outras janelas enquanto aberta.
 """
 
 import tkinter as tk
 from datetime import datetime, date as date_type
+
+import customtkinter as ctk
+
 from core.storage import Storage, Entry
 from utils.config import Config
+from ui.colors import TYPE_BG, TYPE_FG
 
 
 # ──────────────────────────────────────────────────────────────────────
-# Configuração visual por tipo
+# Configuração visual e passos por tipo
 # ──────────────────────────────────────────────────────────────────────
 TYPE_CONFIG = {
-    "insight": {
-        "label":     "💡  INSIGHT",
-        "bg":        "#F4C542",
-        "header_fg": "#1A1A2E",
-        "cursor":    "#C9A020",
-    },
-    "reminder": {
-        "label":     "⏰  LEMBRETE",
-        "bg":        "#E05C5C",
-        "header_fg": "#FFFFFF",
-        "cursor":    "#B03840",
-    },
-    "clipboard": {
-        "label":     "📋  CLIPBOARD",
-        "bg":        "#5CB8E0",
-        "header_fg": "#1A1A2E",
-        "cursor":    "#3A90B8",
-    },
-    "task": {
-        "label":     "✅  TAREFA",
-        "bg":        "#5CE07A",
-        "header_fg": "#1A1A2E",
-        "cursor":    "#38B058",
-    },
-    "note": {
-        "label":     "📝  NOTA",
-        "bg":        "#A07AE0",
-        "header_fg": "#FFFFFF",
-        "cursor":    "#7A50B8",
-    },
+    "insight":   {"label": "💡  INSIGHT",   "cursor": "#C9A020"},
+    "reminder":  {"label": "⏰  LEMBRETE",  "cursor": "#B03840"},
+    "clipboard": {"label": "📋  CLIPBOARD", "cursor": "#3A90B8"},
+    "task":      {"label": "✅  TAREFA",    "cursor": "#38B058"},
+    "note":      {"label": "📝  NOTA",      "cursor": "#7A50B8"},
 }
 
 TYPES = list(TYPE_CONFIG.keys())
 
-# Passos de cada tipo: lista de (chave_do_dado, texto_do_prompt)
 STEPS: dict[str, list[tuple[str, str]]] = {
     "insight":   [("content", "Escreva seu insight...")],
     "reminder":  [
@@ -76,16 +53,15 @@ TEXT_BG = "#FAFAFA"
 TEXT_FG = "#1A1A2E"
 
 
-class QuickCaptureWindow(tk.Toplevel):
+class QuickCaptureWindow(ctk.CTkToplevel):
     """
-    Popup de captura rápida com fundo colorido por tipo.
-    Modal: bloqueia interação com qualquer outra janela enquanto aberta.
-    Suporta fluxos multi-passo para Lembrete e Nota.
+    Popup de captura rápida com fundo colorido por tipo e fade-in.
+    Modal: bloqueia interação com outras janelas enquanto aberta.
     """
 
     def __init__(
         self,
-        master: tk.Tk,
+        master: ctk.CTk,
         storage: Storage,
         config: Config,
         default_type: str = "insight",
@@ -111,16 +87,24 @@ class QuickCaptureWindow(tk.Toplevel):
     # ------------------------------------------------------------------
 
     def _activate(self):
-        """Força foco e modal após a janela estar totalmente renderizada."""
+        """Força foco e modal; inicia o fade-in."""
         self.lift()
         self.focus_force()
         self.grab_set()
+        self._fade_in()
+
+    def _fade_in(self):
+        alpha = self.attributes("-alpha")
+        if alpha < 1.0:
+            self.attributes("-alpha", min(1.0, alpha + 0.1))
+            self.after(16, self._fade_in)
 
     def _configure_window(self):
         self.title("FlowPad")
         self.geometry("440x250")
         self.resizable(False, False)
         self.attributes("-topmost", True)
+        self.attributes("-alpha", 0.0)  # Começa transparente para o fade-in
 
     def _center(self):
         self.update_idletasks()
@@ -131,7 +115,7 @@ class QuickCaptureWindow(tk.Toplevel):
         self.geometry(f"+{x}+{y}")
 
     # ------------------------------------------------------------------
-    # UI
+    # UI — usa widgets tk nativos para controle preciso de teclado
     # ------------------------------------------------------------------
 
     def _build_ui(self):
@@ -169,23 +153,23 @@ class QuickCaptureWindow(tk.Toplevel):
 
     def _apply_type(self, entry_type: str):
         cfg = TYPE_CONFIG[entry_type]
+        bg  = TYPE_BG[entry_type]
+        fg  = TYPE_FG[entry_type]
         self._current_type = entry_type
-        self.configure(bg=cfg["bg"])
-        self.type_label.configure(bg=cfg["bg"], fg=cfg["header_fg"], text=cfg["label"])
-        self.prompt_label.configure(bg=cfg["bg"], fg=cfg["header_fg"], text="")
+        self.configure(fg_color=bg)
+        self.type_label.configure(bg=bg, fg=fg, text=cfg["label"])
+        self.prompt_label.configure(bg=bg, fg=fg, text="")
         self.text_widget.configure(insertbackground=cfg["cursor"])
-        self.hint_label.configure(bg=cfg["bg"], fg=cfg["header_fg"])
+        self.hint_label.configure(bg=bg, fg=fg)
 
     def _update_prompt(self):
-        """Atualiza o label de prompt e o hint para o passo atual."""
         steps = STEPS[self._current_type]
         total = len(steps)
         _, prompt_text = steps[self._step]
         step_info = f"  [{self._step + 1}/{total}]" if total > 1 else ""
         self.prompt_label.configure(text=f"  {prompt_text}{step_info}")
 
-        is_last = self._step == total - 1
-        action = "salvar" if is_last else "avançar"
+        action = "salvar" if self._step == total - 1 else "avançar"
         self.hint_label.configure(
             text=f"Enter {action}  •  Shift+Enter nova linha  •  Esc cancela"
         )
@@ -247,7 +231,7 @@ class QuickCaptureWindow(tk.Toplevel):
         return "break"
 
     def _on_return(self, event):
-        if event.state & 0x1:  # Shift pressionado
+        if event.state & 0x1:
             return
         self._advance_step()
         return "break"
@@ -257,12 +241,10 @@ class QuickCaptureWindow(tk.Toplevel):
     # ------------------------------------------------------------------
 
     def _advance_step(self):
-        """Salva o campo atual e avança ao próximo passo ou salva a entrada."""
         steps = STEPS[self._current_type]
         current_key = steps[self._step][0]
         value = self.text_widget.get("1.0", "end").strip()
 
-        # A data pode ser vazia (significa hoje); os outros campos são obrigatórios
         if not value and current_key != "date":
             return
 
@@ -276,7 +258,6 @@ class QuickCaptureWindow(tk.Toplevel):
             self._save()
 
     def _save(self):
-        """Cria a Entry com os dados coletados e fecha a janela."""
         data = self._step_data
         entry_type = self._current_type
 
@@ -308,15 +289,13 @@ class QuickCaptureWindow(tk.Toplevel):
 
     @staticmethod
     def _build_reminder_at(time_str: str, date_str: str) -> str | None:
-        """Converte strings de hora e data em ISO datetime. Retorna None se inválido."""
         try:
             parts = time_str.strip().split(":")
             h, m = int(parts[0]), int(parts[1])
             if date_str.strip():
                 d_parts = date_str.strip().split("/")
                 d, mo = int(d_parts[0]), int(d_parts[1])
-                year = datetime.now().year
-                dt = datetime(year, mo, d, h, m)
+                dt = datetime(datetime.now().year, mo, d, h, m)
             else:
                 today = date_type.today()
                 dt = datetime(today.year, today.month, today.day, h, m)
