@@ -62,9 +62,11 @@ class FlowPadApp:
         hotkeys = self.config.get("hotkeys", {})
         capture_key = hotkeys.get("quick_capture", "ctrl+shift+space")
         dashboard_key = hotkeys.get("dashboard", "ctrl+shift+f")
+        clipboard_key = hotkeys.get("clipboard_capture", "ctrl+shift+c")
 
         self.hotkey_manager.register(capture_key, self._on_hotkey_capture)
         self.hotkey_manager.register(dashboard_key, self._on_hotkey_dashboard)
+        self.hotkey_manager.register(clipboard_key, self._on_hotkey_clipboard)
 
     # ------------------------------------------------------------------
     # Hotkey callbacks (chamados de thread separada — usa `after` p/ thread safety)
@@ -76,6 +78,9 @@ class FlowPadApp:
     def _on_hotkey_dashboard(self):
         self.root.after(0, self.open_dashboard)
 
+    def _on_hotkey_clipboard(self):
+        self.root.after(0, self._capture_clipboard)
+
     def _open_settings_from_tray(self):
         """Wrapper com after() para chamar de dentro da thread do pystray com segurança."""
         self.root.after(0, self.open_settings)
@@ -83,6 +88,34 @@ class FlowPadApp:
     # ------------------------------------------------------------------
     # Ações públicas
     # ------------------------------------------------------------------
+
+    def _capture_clipboard(self):
+        """Lê a área de transferência e salva como entrada do tipo clipboard."""
+        try:
+            content = self.root.clipboard_get()
+        except tk.TclError:
+            return
+        if not content.strip():
+            return
+        from core.storage import Entry
+        self.storage.save(Entry(content=content, entry_type="clipboard"))
+        self._show_clipboard_toast()
+
+    def _show_clipboard_toast(self):
+        """Exibe uma notificação temporária confirmando a captura do clipboard."""
+        toast = tk.Toplevel(self.root)
+        toast.overrideredirect(True)
+        toast.attributes("-topmost", True)
+        sw = self.root.winfo_screenwidth()
+        sh = self.root.winfo_screenheight()
+        toast.geometry(f"260x46+{sw - 280}+{sh - 80}")
+        toast.configure(bg="#5CB8E0")
+        tk.Label(
+            toast, text="📋  Clipboard capturado!",
+            bg="#5CB8E0", fg="#1A1A2E",
+            font=("Consolas", 10, "bold")
+        ).pack(expand=True)
+        toast.after(1400, toast.destroy)
 
     def open_quick_capture(self, entry_type: str = "insight"):
         """Abre (ou foca) a janela de captura rápida."""

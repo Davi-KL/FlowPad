@@ -13,6 +13,7 @@ DEFAULT_CONFIG = {
     "hotkeys": {
         "quick_capture": "ctrl+shift+space",
         "dashboard": "ctrl+shift+f",
+        "clipboard_capture": "ctrl+shift+c",
     },
     "theme": "dark",
     "language": "pt-BR",
