@@ -92,3 +92,26 @@ class TestStorage:
 
     def test_empty_storage_returns_empty_list(self, storage):
         assert storage.get_all() == []
+
+    def test_completed_defaults_to_false(self, storage):
+        entry = storage.save(Entry(content="Tarefa nova", entry_type="task"))
+        assert entry.completed is False
+
+    def test_toggle_completed_marks_done(self, storage):
+        entry = storage.save(Entry(content="Tarefa", entry_type="task"))
+        result = storage.toggle_completed(entry.id)
+        assert result is True
+        updated = storage.get_all()[0]
+        assert updated.completed is True
+
+    def test_toggle_completed_twice_returns_false(self, storage):
+        entry = storage.save(Entry(content="Tarefa", entry_type="task"))
+        storage.toggle_completed(entry.id)
+        storage.toggle_completed(entry.id)
+        updated = storage.get_all()[0]
+        assert updated.completed is False
+
+    def test_completed_roundtrip(self):
+        e = Entry(content="Done", entry_type="task", completed=True)
+        e2 = Entry.from_dict(e.to_dict())
+        assert e2.completed is True

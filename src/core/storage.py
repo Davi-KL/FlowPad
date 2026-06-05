@@ -37,6 +37,7 @@ class Entry:
         entry_id: str | None = None,
         created_at: str | None = None,
         archived: bool = False,
+        completed: bool = False,
     ):
         self.id = entry_id or str(uuid.uuid4())
         self.content = content
@@ -47,6 +48,7 @@ class Entry:
         self.reminder_interval_min = reminder_interval_min  # repetição em minutos
         self.created_at = created_at or datetime.now().isoformat()
         self.archived = archived
+        self.completed = completed
 
     def to_dict(self) -> dict:
         return {
@@ -59,6 +61,7 @@ class Entry:
             "reminder_interval_min": self.reminder_interval_min,
             "created_at": self.created_at,
             "archived": self.archived,
+            "completed": self.completed,
         }
 
     @classmethod
@@ -73,6 +76,7 @@ class Entry:
             entry_id=data.get("id"),
             created_at=data.get("created_at"),
             archived=data.get("archived", False),
+            completed=data.get("completed", False),
         )
 
 
@@ -179,3 +183,13 @@ class Storage:
     def get_recent(self, limit: int = 10) -> list[Entry]:
         """Retorna as N entradas mais recentes."""
         return self.get_all()[:limit]
+
+    def toggle_completed(self, entry_id: str) -> bool:
+        """Alterna o estado de conclusão de uma tarefa."""
+        entries = self._read()
+        for e in entries:
+            if e["id"] == entry_id:
+                e["completed"] = not e.get("completed", False)
+                self._write(entries)
+                return True
+        return False
