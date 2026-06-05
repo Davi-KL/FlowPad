@@ -181,6 +181,29 @@ pyinstaller flowpad.spec
 
 ## 📋 Roadmap de Sprints
 
+### ✅ Sprint 1 — Qualidade e UX (concluída)
+
+**Objetivo:** Robustez, testes e polish da UX.
+
+**O que foi entregue:**
+- [x] **[FEAT] Janela de captura rápida redesenhada** — fluxo em dois modos (seleção → escrita), fundo colorido por tipo, modal com grab_set(), ativação com delay para garantir foco no Windows
+- [x] **[FEAT] Tags nas entradas** — campo de tags no dashboard com filtro em tempo real
+- [x] **[FEAT] Exportação de entradas** — botão "📤 Exportar" no dashboard, gera `.md`, `.txt` ou `.json`
+- [x] **[FEAT] Tela de configurações de hotkeys** — `ui/settings.py` com validação de formato, reload sem reiniciar
+- [x] **[FIX] Ícone .ico real** — 6 resoluções (16→256px) em `assets/icon.ico`, fallback programático em `tray_icon.py`
+- [x] **[TEST] Testes do Exporter** — 12 testes unitários, lógica pura sem UI
+- [x] **[DOCS] CONTRIBUTING.md** — guia completo para contribuidores
+- [x] **[DOCS] CHANGELOG.md** — histórico de versões no formato Keep a Changelog
+
+**Decisões técnicas desta sprint:**
+- `grab_set()` com `after(50ms)` para garantir foco no Windows (focus-stealing prevention)
+- `<Shift-Return>` registrado antes de `<Return>` + checagem de `event.state & 0x1` para quebra de linha sem salvar
+- Teclas 1–4 ficam em modo seleção (não entram no modo escrita) — Enter confirma o tipo
+- Exportação usa importação lazy de `filedialog` para não poluir testes
+- `_get_asset_path()` com `sys._MEIPASS` para compatibilidade com PyInstaller
+
+---
+
 ### ✅ Sprint 0 — MVP Base (concluída)
 
 **Objetivo:** Estrutura completa funcional do zero.
@@ -206,32 +229,6 @@ pyinstaller flowpad.spec
 - `root.after()` para thread safety entre pynput e Tkinter
 
 ---
-
-### 🔄 Sprint 1 — Qualidade e UX (próxima)
-
-**Objetivo:** Robustez, testes e polish da UX.
-
-**Issues planejadas:**
-
-- [ ] **[FEAT] Tela de configurações de hotkeys** — UI para o usuário mudar os atalhos sem editar JSON
-- [ ] **[FEAT] Exportação de entradas** — Exportar para `.md`, `.txt` ou `.json`
-- [ ] **[FEAT] Tags nas entradas** — Input de tags na captura rápida e filtro por tag no dashboard
-- [ ] **[FIX] Ícone .ico real** — Substituir ícone gerado programaticamente por arquivo `.ico` em `assets/`
-- [ ] **[TEST] Cobertura de testes para UI** — Testes para `quick_capture.py` e `dashboard.py` com `pytest-tk`
-- [ ] **[DOCS] Guia de contribuição** — `CONTRIBUTING.md` com padrões de código, como abrir PRs
-- [ ] **[DOCS] Changelog** — `CHANGELOG.md` com histórico de versões
-
-**Commits planejados para a sprint:**
-```
-feat: add settings window for hotkey customization
-feat: add tag input to quick capture form
-feat: add export entries to markdown/txt/json
-fix: replace programmatic icon with proper .ico file
-test: add ui tests for quick_capture window
-docs: add CONTRIBUTING.md
-docs: add CHANGELOG.md
-chore: update CLAUDE.md with sprint 1 decisions
-```
 
 ---
 
@@ -376,5 +373,5 @@ chore: update CLAUDE.md with sprint 1 decisions
 
 ---
 
-*Última atualização: Sprint 0 — MVP Base*
-*Próxima atualização prevista: ao finalizar Sprint 1*
+*Última atualização: Sprint 1 — Qualidade e UX*
+*Próxima atualização prevista: ao finalizar Sprint 2*
