@@ -14,6 +14,7 @@ from core.reminder_scheduler import ReminderScheduler
 from ui.tray_icon import TrayIcon
 from ui.quick_capture import QuickCaptureWindow
 from ui.dashboard import DashboardWindow
+from ui.settings import SettingsWindow
 from utils.config import Config
 
 
@@ -37,6 +38,7 @@ class FlowPadApp:
         # Janelas (lazy — só criadas quando abertas pela 1ª vez)
         self._capture_window: QuickCaptureWindow | None = None
         self._dashboard_window: DashboardWindow | None = None
+        self._settings_window: SettingsWindow | None = None
 
         self._setup_tray()
         self._register_hotkeys()
@@ -51,13 +53,13 @@ class FlowPadApp:
         self.tray = TrayIcon(
             on_open_dashboard=self.open_dashboard,
             on_quick_capture=self.open_quick_capture,
+            on_open_settings=self._open_settings_from_tray,
             on_quit=self.quit,
         )
 
     def _register_hotkeys(self):
         """Registra os atalhos globais conforme configuração do usuário."""
         hotkeys = self.config.get("hotkeys", {})
-
         capture_key = hotkeys.get("quick_capture", "ctrl+shift+space")
         dashboard_key = hotkeys.get("dashboard", "ctrl+shift+f")
 
@@ -73,6 +75,10 @@ class FlowPadApp:
 
     def _on_hotkey_dashboard(self):
         self.root.after(0, self.open_dashboard)
+
+    def _open_settings_from_tray(self):
+        """Wrapper com after() para chamar de dentro da thread do pystray com segurança."""
+        self.root.after(0, self.open_settings)
 
     # ------------------------------------------------------------------
     # Ações públicas
@@ -103,6 +109,23 @@ class FlowPadApp:
         else:
             self._dashboard_window.lift()
             self._dashboard_window.focus_force()
+
+    def open_settings(self):
+        """Abre (ou foca) a tela de configurações."""
+        if self._settings_window is None or not self._settings_window.winfo_exists():
+            self._settings_window = SettingsWindow(
+                master=self.root,
+                config=self.config,
+                on_hotkeys_changed=self.reload_hotkeys,
+            )
+        else:
+            self._settings_window.lift()
+            self._settings_window.focus_force()
+
+    def reload_hotkeys(self, new_hotkeys: dict):
+        """Para o listener atual e registra os novos atalhos do config."""
+        self.hotkey_manager.unregister_all()
+        self._register_hotkeys()
 
     def quit(self):
         """Encerra o aplicativo de forma limpa."""
