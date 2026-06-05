@@ -1,4 +1,4 @@
-# CLAUDE.md — FlowPad
+[# CLAUDE.md — FlowPad
 
 > **Este arquivo é o guia principal para o Claude Code trabalhar neste projeto.**
 > Ele deve ser lido integralmente antes de qualquer ação.
@@ -30,7 +30,12 @@ flowpad/
 │   ├── ui/
 │   │   ├── tray_icon.py         # Ícone da bandeja do sistema
 │   │   ├── quick_capture.py     # Janela popup de captura rápida ⭐
-│   │   └── dashboard.py         # Dashboard completo de entradas
+│   │   ├── dashboard.py         # Hub de abas (orquestra as 5 visões)
+│   │   ├── view_insights.py     # Aba: cards de insights FILO
+│   │   ├── view_reminders.py    # Aba: lembretes por proximidade
+│   │   ├── view_clipboard.py    # Aba: clipboard FILO + Ctrl+Shift+C
+│   │   ├── view_tasks.py        # Aba: to-do com toggle de conclusão
+│   │   └── view_notes.py        # Aba: lista de títulos + painel de conteúdo
 │   └── utils/
 │       └── config.py            # Configurações do usuário (JSON)
 ├── tests/
@@ -180,6 +185,31 @@ pyinstaller flowpad.spec
 ---
 
 ## 📋 Roadmap de Sprints
+
+### ✅ Sprint 2 — Visões por Tipo (concluída)
+
+**Objetivo:** Dashboard por abas com visão especializada para cada tipo de entrada; captura multi-passo para Lembrete e Nota; captura automática de clipboard.
+
+**O que foi entregue:**
+- [x] **[FEAT] `Entry.completed` + `Storage.toggle_completed()`** — campo booleano para tarefas, toggle atômico no JSON
+- [x] **[FEAT] `ui/view_tasks.py`** — lista To-Do com filtros Todas/Pendentes/Concluídas, Space para toggle
+- [x] **[FEAT] `ui/view_insights.py`** — cards FILO com painel de detalhe, ações copiar/arquivar/deletar
+- [x] **[FEAT] `ui/view_clipboard.py`** — cards FILO, hint de Ctrl+Shift+C, ações por item
+- [x] **[FEAT] `ui/view_reminders.py`** — ordenado por proximidade, vencidos em vermelho, próximos em verde
+- [x] **[FEAT] `ui/view_notes.py`** — painel bipartido: lista de títulos (esquerda) + conteúdo completo (direita)
+- [x] **[REFACTOR] `ui/dashboard.py`** — reescrito como hub de abas (sem busca global); cada aba carrega sua visão
+- [x] **[FEAT] `ui/quick_capture.py`** — 5 tipos (adicionado Nota 📝); máquina de estados multi-passo para Lembrete (3 passos) e Nota (2 passos)
+- [x] **[FEAT] Ctrl+Shift+C** — hotkey global captura área de transferência diretamente, exibe toast e salva como Clipboard
+- [x] **[TEST] 4 testes novos** em `test_storage.py` para `completed` e `toggle_completed`
+
+**Decisões técnicas desta sprint:**
+- Visões são `tk.Frame` embarcados no dashboard — evita janelas separadas, simplifica lifecycle
+- `_switch_tab()` usa `pack`/`pack_forget` em vez de `grid` — mais simples e suficiente para 5 abas
+- Captura multi-passo: state machine `_step` + `_step_data` em `QuickCaptureWindow`; `date` é o único campo que aceita vazio (= hoje)
+- Toast de clipboard: `Toplevel` com `overrideredirect(True)` no canto inferior direito, auto-destrói em 1,4s
+- Ctrl+Shift+C lê clipboard via `root.clipboard_get()` na thread principal (chamado por `root.after(0, ...)` do callback pynput)
+
+---
 
 ### ✅ Sprint 1 — Qualidade e UX (concluída)
 
@@ -339,7 +369,8 @@ pyinstaller flowpad.spec
   "reminder_at": null,
   "reminder_interval_min": null,
   "created_at": "2024-01-15T14:32:10.123456",
-  "archived": false
+  "archived": false,
+  "completed": false
 }
 ```
 
@@ -373,5 +404,5 @@ pyinstaller flowpad.spec
 
 ---
 
-*Última atualização: Sprint 1 — Qualidade e UX*
-*Próxima atualização prevista: ao finalizar Sprint 2*
+*Última atualização: Sprint 2 — Visões por Tipo*
+*Próxima atualização prevista: ao finalizar Sprint 3 (Polish Visual)*
